@@ -21,16 +21,19 @@ const PROFILE = {
 /* ------------------------------------------------------------------ */
 // 60 frames, 1920×1080 WebP, in /public/portrait/001.webp … 060.webp
 const TOTAL_FRAMES = 60;
-const frameUrl = (i) => `/portrait/${String(i + 1).padStart(3, "0")}.webp`;
-// Phones / slow connections decode frames at a smaller size to save memory.
+// Mobile layout (≤ 820px) uses square 720×720 crops around the head in /portrait/m/ (2.3 MB vs 7.1 MB).
+const MOBILE = typeof window !== "undefined" && window.matchMedia("(max-width: 820px)").matches;
+const TOUCH = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
+const frameUrl = (i) => `/portrait/${MOBILE ? "m/" : ""}${String(i + 1).padStart(3, "0")}.webp`;
+// Touch devices / slow connections decode frames at a smaller size to save memory.
 const LITE =
   typeof window !== "undefined" &&
-  (window.matchMedia("(pointer: coarse)").matches ||
+  (TOUCH ||
     !!navigator.connection?.saveData ||
     ["slow-2g", "2g", "3g"].includes(navigator.connection?.effectiveType));
-// Canvas / decode resolution (16:9, same as the source frames)
-const FRAME_W = LITE ? 854 : 1280;
-const FRAME_H = LITE ? 480 : 720;
+// Canvas / decode resolution (same aspect as the source frames)
+const FRAME_W = MOBILE ? 720 : LITE ? 854 : 1280;
+const FRAME_H = MOBILE ? 720 : LITE ? 480 : 720;
 
 const GAIN = 1.5; // >1 = more sensitive: full head turn is reached before the cursor hits the screen edge
 const CURVE = 0.78; // <1 = small cursor movements already turn the head noticeably
@@ -200,7 +203,7 @@ const CSS = `@import url("https://fonts.googleapis.com/css2?family=Instrument+Se
 }
 .is-ready .vr-portrait { opacity: 1; }
 .vr-media { position: relative; width: 100%; height: 100%; }
-.vr-poster, .vr-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: fill; }
+.vr-poster, .vr-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: cover; }
 .vr-canvas { opacity: 0; transition: opacity 0.5s ease; }
 .vr-media.is-live .vr-canvas { opacity: 1; }
 
@@ -299,14 +302,33 @@ const CSS = `@import url("https://fonts.googleapis.com/css2?family=Instrument+Se
 @media (max-width: 1100px) {
   .vr-facts { width: 260px; }
 }
+/* Mobile: everything stacks in normal flow – square portrait that fades into the
+   background, then the copy on a clean ground (never over the dark jacket). */
 @media (max-width: 820px) {
-  .vr-home { min-height: 760px; }
-  .vr-top nav a:nth-child(n + 3) { display: none; }
-  .vr-portrait { height: min(58svh, 90vw); bottom: auto; top: 76px; }
-  .vr-copy { left: var(--pad); right: var(--pad); bottom: 84px; max-width: none; }
-  .vr-subline { font-size: clamp(38px, 11vw, 64px); }
-  .vr-intro { font-size: 12px; margin-bottom: 20px; }
-  .vr-facts, .vr-status, .vr-social { display: none; }
+  .vr-home { height: auto; min-height: 0; display: flex; flex-direction: column; padding-bottom: 28px; }
+  .vr-top { display: none; } /* the site navbar is already above the hero */
+  .vr-stage { position: relative; inset: auto; }
+  .vr-portrait {
+    position: relative; left: auto; bottom: auto; transform: none;
+    width: min(100%, 62svh); height: auto; aspect-ratio: 1 / 1; margin: 0 auto;
+    pointer-events: auto; touch-action: pan-y; /* horizontal drags turn the head, vertical still scrolls */
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 10%, #000 90%, transparent 100%), linear-gradient(180deg, #000 62%, transparent 98%);
+    mask-image: linear-gradient(90deg, transparent 0, #000 10%, #000 90%, transparent 100%), linear-gradient(180deg, #000 62%, transparent 98%);
+  }
+  .vr-copy { position: relative; left: auto; right: auto; bottom: auto; max-width: none; margin-top: -36px; padding: 0 var(--pad); }
+  .vr-role { margin-bottom: 16px; font-size: 10px; }
+  .vr-name { font-size: 18px; margin-bottom: 10px; }
+  .vr-subline { font-size: clamp(34px, 10.5vw, 56px); margin-bottom: 18px; }
+  .vr-intro { font-size: 13px; line-height: 1.7; margin-bottom: 24px; max-width: none; }
+  .vr-actions { gap: 10px; }
+  .vr-btn { flex: 1 1 140px; justify-content: center; padding: 16px 14px; }
+  .vr-facts { position: relative; right: auto; bottom: auto; width: auto; margin: 32px var(--pad) 0; }
+  .vr-foot { position: relative; left: auto; right: auto; bottom: auto; margin: 24px var(--pad) 0; flex-wrap: wrap; gap: 14px 24px; align-items: center; }
+  .vr-scroll { display: none; }
+  .vr-status, .vr-social { padding-bottom: 0; }
+  .vr-foot { justify-content: flex-start; }
+  .vr-social { gap: 4px 18px; flex-wrap: wrap; }
+  .vr-social a { padding: 8px 0; } /* bigger tap target */
   .vr-shape:nth-child(n + 5) { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -418,20 +440,77 @@ function LivingPortrait() {
       }
     };
 
+    // ---- input: mouse anywhere; on touch devices a drag across the portrait,
+    // tilting the phone, and a slow idle "look around" when nobody interacts
+    const media = canvas.parentElement;
+    let lastInput = -Infinity;
+
     const onMove = (e) => {
+      if (e.pointerType === "touch" && !media.contains(e.target)) return; // page scrolls elsewhere
       target = xToIndex((e.clientX / window.innerWidth) * 2 - 1);
+      lastInput = performance.now();
     };
     const toCenter = () => {
       target = center;
     };
+
+    let base = null; // how the phone is normally held; drifts slowly to re-centre
+    const onTilt = (e) => {
+      if (e.gamma == null) return;
+      base = base == null ? e.gamma : base + (e.gamma - base) * 0.004;
+      const d = e.gamma - base;
+      if (Math.abs(d) < 3) return; // ignore hand jitter so the idle motion can take over
+      target = xToIndex(clamp(d / 25, -1, 1));
+      lastInput = performance.now();
+    };
+    let tiltOn = false;
+    const enableTilt = () => {
+      if (tiltOn || !TOUCH || reduced || !("DeviceOrientationEvent" in window)) return;
+      const ask = DeviceOrientationEvent.requestPermission; // iOS asks once, after a tap
+      if (typeof ask === "function") {
+        ask.call(DeviceOrientationEvent)
+          .then((r) => r === "granted" && alive && window.addEventListener("deviceorientation", onTilt))
+          .catch(() => {});
+      } else {
+        window.addEventListener("deviceorientation", onTilt);
+      }
+      tiltOn = true;
+    };
+    if (typeof DeviceOrientationEvent === "undefined" || typeof DeviceOrientationEvent.requestPermission !== "function") {
+      enableTilt(); // Android: no prompt needed
+    }
+    const onTap = (e) => {
+      onMove(e);
+      if (e.pointerType === "touch") enableTilt();
+    };
+
     window.addEventListener("pointermove", onMove, { passive: true });
-    window.addEventListener("pointerdown", onMove, { passive: true });
+    window.addEventListener("pointerdown", onTap, { passive: true });
     document.documentElement.addEventListener("mouseleave", toCenter);
     window.addEventListener("blur", toCenter);
 
+    // pause the animation while the hero is scrolled out of view (saves battery)
+    let visible = true;
+    const io = new IntersectionObserver(([entry]) => {
+      visible = entry.isIntersecting;
+      if (visible && started && !raf) {
+        last = performance.now();
+        raf = requestAnimationFrame(tick);
+      }
+    });
+    io.observe(media);
+
     const tick = (now) => {
+      if (!visible) {
+        raf = 0;
+        return;
+      }
       const dt = clamp((now - last) / 1000, 0.001, 0.05);
       last = now;
+      // touch devices: after a few quiet seconds the head slowly looks around on its own
+      if (TOUCH && !reduced && now - lastInput > 2500) {
+        target = xToIndex(0.55 * Math.sin(now / 1000 * 0.5));
+      }
       const goal = clamp(target, lo, hi);
       [pos, vel] = smoothDamp(pos, goal, vel, reduced ? SMOOTH_TIME * 1.8 : SMOOTH_TIME, MAX_SPEED, dt);
 
@@ -489,9 +568,11 @@ function LivingPortrait() {
       alive = false;
       cancelAnimationFrame(raf);
       window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerdown", onMove);
+      window.removeEventListener("pointerdown", onTap);
+      window.removeEventListener("deviceorientation", onTilt);
       document.documentElement.removeEventListener("mouseleave", toCenter);
       window.removeEventListener("blur", toCenter);
+      io.disconnect();
       bitmaps.forEach((b) => b?.close?.());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -502,9 +583,9 @@ function LivingPortrait() {
       <img
         className="vr-poster"
         src={POSTER_SRC}
-        width={1920}
-        height={1080}
-        alt={`Portrait of ${PROFILE.name}, turning to follow your cursor`}
+        width={MOBILE ? 720 : 1920}
+        height={MOBILE ? 720 : 1080}
+        alt={`Portrait of ${PROFILE.name}, turning to follow your ${TOUCH ? "touch" : "cursor"}`}
         fetchpriority="high"
         decoding="async"
       />
@@ -678,7 +759,7 @@ export default function Hero({ onEnterPortfolio, onViewProjects }) {
   }, []);
 
   return (
-    <main ref={rootRef} className={`vr-home ${ready ? "is-ready" : ""}`}>
+    <main ref={rootRef} id="home" className={`vr-home ${ready ? "is-ready" : ""}`}>
       <style>{CSS}</style>
 
       <div className="vr-grid" aria-hidden="true" />

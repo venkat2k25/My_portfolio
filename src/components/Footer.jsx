@@ -2,7 +2,7 @@ import { navLinks } from "../data/content";
 
 export default function Footer() {
   return (
-    <footer>
+    <footer className="site-footer">
       <span>© 2026 Venkata Raja B Y</span>
       <nav aria-label="Footer navigation">
         {navLinks.map((link) => (
