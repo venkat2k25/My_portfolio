@@ -24,6 +24,13 @@ const TOTAL_FRAMES = 60;
 // Mobile layout (≤ 820px) uses square 720×720 crops around the head in /portrait/m/ (2.3 MB vs 7.1 MB).
 const MOBILE = typeof window !== "undefined" && window.matchMedia("(max-width: 820px)").matches;
 const TOUCH = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
+// Phones / tablets (by device, not screen width): the head follows the tilt sensor instead of the cursor.
+const PHONE =
+  typeof navigator !== "undefined" &&
+  (navigator.userAgentData?.mobile ||
+    /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+    (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1) || // iPadOS reports as a Mac
+    (TOUCH && !window.matchMedia("(hover: hover)").matches));
 const frameUrl = (i) => `/portrait/${MOBILE ? "m/" : ""}${String(i + 1).padStart(3, "0")}.webp`;
 // Touch devices / slow connections decode frames at a smaller size to save memory.
 const LITE =
@@ -311,7 +318,6 @@ const CSS = `@import url("https://fonts.googleapis.com/css2?family=Instrument+Se
   .vr-portrait {
     position: relative; left: auto; bottom: auto; transform: none;
     width: min(100%, 62svh); height: auto; aspect-ratio: 1 / 1; margin: 0 auto;
-    pointer-events: auto; touch-action: pan-y; /* horizontal drags turn the head, vertical still scrolls */
     -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 10%, #000 90%, transparent 100%), linear-gradient(180deg, #000 62%, transparent 98%);
     mask-image: linear-gradient(90deg, transparent 0, #000 10%, #000 90%, transparent 100%), linear-gradient(180deg, #000 62%, transparent 98%);
   }
@@ -440,54 +446,66 @@ function LivingPortrait() {
       }
     };
 
-    // ---- input: mouse anywhere; on touch devices a drag across the portrait,
-    // tilting the phone, and a slow idle "look around" when nobody interacts
+    // ---- input
+    // Desktop: the mouse position anywhere on the page.
+    // Phones/tablets: the tilt sensor only (touches are ignored). If there is no
+    // sensor data – permission denied, no gyroscope – the head slowly looks around.
     const media = canvas.parentElement;
-    let lastInput = -Infinity;
+    let lastTilt = -Infinity;
 
     const onMove = (e) => {
-      if (e.pointerType === "touch" && !media.contains(e.target)) return; // page scrolls elsewhere
       target = xToIndex((e.clientX / window.innerWidth) * 2 - 1);
-      lastInput = performance.now();
     };
     const toCenter = () => {
       target = center;
     };
 
-    let base = null; // how the phone is normally held; drifts slowly to re-centre
+    // left/right tilt in the current screen orientation (degrees)
+    const sideTilt = (e) => {
+      const angle = screen.orientation?.angle ?? window.orientation ?? 0;
+      if (angle === 90) return e.beta;
+      if (angle === -90 || angle === 270) return -e.beta;
+      if (angle === 180) return -e.gamma;
+      return e.gamma;
+    };
+    let base = null; // how the phone is normally held; drifts slowly so that becomes "facing you"
     const onTilt = (e) => {
-      if (e.gamma == null) return;
-      base = base == null ? e.gamma : base + (e.gamma - base) * 0.004;
-      const d = e.gamma - base;
-      if (Math.abs(d) < 3) return; // ignore hand jitter so the idle motion can take over
-      target = xToIndex(clamp(d / 25, -1, 1));
-      lastInput = performance.now();
-    };
-    let tiltOn = false;
-    const enableTilt = () => {
-      if (tiltOn || !TOUCH || reduced || !("DeviceOrientationEvent" in window)) return;
-      const ask = DeviceOrientationEvent.requestPermission; // iOS asks once, after a tap
-      if (typeof ask === "function") {
-        ask.call(DeviceOrientationEvent)
-          .then((r) => r === "granted" && alive && window.addEventListener("deviceorientation", onTilt))
-          .catch(() => {});
-      } else {
-        window.addEventListener("deviceorientation", onTilt);
-      }
-      tiltOn = true;
-    };
-    if (typeof DeviceOrientationEvent === "undefined" || typeof DeviceOrientationEvent.requestPermission !== "function") {
-      enableTilt(); // Android: no prompt needed
-    }
-    const onTap = (e) => {
-      onMove(e);
-      if (e.pointerType === "touch") enableTilt();
+      if (e.gamma == null || e.beta == null) return;
+      const t = sideTilt(e);
+      base = base == null ? t : base + (t - base) * 0.003;
+      let d = t - base;
+      d = Math.abs(d) < 2 ? 0 : d - Math.sign(d) * 2; // small dead zone against hand jitter
+      target = xToIndex(clamp(d / 22, -1, 1)); // ~24° of tilt = full head turn
+      lastTilt = performance.now();
     };
 
-    window.addEventListener("pointermove", onMove, { passive: true });
-    window.addEventListener("pointerdown", onTap, { passive: true });
-    document.documentElement.addEventListener("mouseleave", toCenter);
-    window.addEventListener("blur", toCenter);
+    const listenTilt = () => window.addEventListener("deviceorientation", onTilt);
+    const needsPermission =
+      typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function";
+    // iOS only allows the permission prompt from a tap, so ask on the first one anywhere
+    const askPermission = () => {
+      window.removeEventListener("touchend", askPermission);
+      window.removeEventListener("click", askPermission);
+      DeviceOrientationEvent.requestPermission()
+        .then((r) => r === "granted" && alive && listenTilt())
+        .catch(() => {});
+    };
+
+    if (PHONE) {
+      if (!reduced && typeof DeviceOrientationEvent !== "undefined") {
+        if (needsPermission) {
+          window.addEventListener("touchend", askPermission, { passive: true });
+          window.addEventListener("click", askPermission);
+        } else {
+          listenTilt(); // Android: no prompt needed
+        }
+      }
+    } else {
+      window.addEventListener("pointermove", onMove, { passive: true });
+      window.addEventListener("pointerdown", onMove, { passive: true });
+      document.documentElement.addEventListener("mouseleave", toCenter);
+      window.addEventListener("blur", toCenter);
+    }
 
     // pause the animation while the hero is scrolled out of view (saves battery)
     let visible = true;
@@ -507,8 +525,8 @@ function LivingPortrait() {
       }
       const dt = clamp((now - last) / 1000, 0.001, 0.05);
       last = now;
-      // touch devices: after a few quiet seconds the head slowly looks around on its own
-      if (TOUCH && !reduced && now - lastInput > 2500) {
+      // phones without tilt data (yet): the head slowly looks around on its own
+      if (PHONE && !reduced && now - lastTilt > 1500) {
         target = xToIndex(0.55 * Math.sin(now / 1000 * 0.5));
       }
       const goal = clamp(target, lo, hi);
@@ -568,7 +586,9 @@ function LivingPortrait() {
       alive = false;
       cancelAnimationFrame(raf);
       window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerdown", onTap);
+      window.removeEventListener("pointerdown", onMove);
+      window.removeEventListener("touchend", askPermission);
+      window.removeEventListener("click", askPermission);
       window.removeEventListener("deviceorientation", onTilt);
       document.documentElement.removeEventListener("mouseleave", toCenter);
       window.removeEventListener("blur", toCenter);
@@ -585,7 +605,7 @@ function LivingPortrait() {
         src={POSTER_SRC}
         width={MOBILE ? 720 : 1920}
         height={MOBILE ? 720 : 1080}
-        alt={`Portrait of ${PROFILE.name}, turning to follow your ${TOUCH ? "touch" : "cursor"}`}
+        alt={`Portrait of ${PROFILE.name}, turning as you ${PHONE ? "tilt your phone" : "move your cursor"}`}
         fetchpriority="high"
         decoding="async"
       />
