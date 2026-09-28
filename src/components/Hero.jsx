@@ -1,3179 +1,760 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { navLinks, quickFacts, socials } from "../data/content";
 
 /* ------------------------------------------------------------------ */
-/*  Edit this block – your links and labels                            */
+/*  Edit this block – copy and labels (links come from data/content)   */
 /* ------------------------------------------------------------------ */
-
 const PROFILE = {
   name: "VENKATA RAJA",
-  role: "AI ENGINEER / FULL-STACK DEVELOPER",
-  availability: "AVAILABLE FOR OPPORTUNITIES",
-
-  nav: [
-    { label: "WORK", href: "#work" },
-    { label: "PROJECTS", href: "#projects" },
-    { label: "ABOUT", href: "#about" },
-    { label: "CONTACT", href: "#contact" },
-  ],
-
-  social: [
-    { label: "GITHUB", href: "https://github.com/your-username" },
-    {
-      label: "LINKEDIN",
-      href: "https://www.linkedin.com/in/your-username",
-    },
-    { label: "EMAIL", href: "mailto:you@example.com" },
-  ],
+  role: "SOFTWARE ENGINEER · AI & FULL-STACK",
+  headline: ["Reliable systems,", "intelligent products."],
+  intro:
+    "Software Engineer at TCS, validating airline reservation systems for Japan Airlines partners. " +
+    "Alongside that, I build AI-driven analytics, computer-vision and full-stack applications.",
+  availability: "OPEN TO OPPORTUNITIES",
+  nav: navLinks.filter((n) => n.href !== "#skills"),
+  social: socials,
 };
 
-
 /* ------------------------------------------------------------------ */
-/*  PORTRAIT FRAME CONFIGURATION                                      */
+/*  Head-tracking behaviour – tune here                                */
 /* ------------------------------------------------------------------ */
+// 60 frames, 1920×1080 WebP, in /public/portrait/001.webp … 060.webp
+const TOTAL_FRAMES = 60;
+const frameUrl = (i) => `/portrait/${String(i + 1).padStart(3, "0")}.webp`;
+// Phones / slow connections decode frames at a smaller size to save memory.
+const LITE =
+  typeof window !== "undefined" &&
+  (window.matchMedia("(pointer: coarse)").matches ||
+    !!navigator.connection?.saveData ||
+    ["slow-2g", "2g", "3g"].includes(navigator.connection?.effectiveType));
+// Canvas / decode resolution (16:9, same as the source frames)
+const FRAME_W = LITE ? 854 : 1280;
+const FRAME_H = LITE ? 480 : 720;
 
-/*
- * Your files are:
- *
- * public/portrait/001.webp
- * public/portrait/002.webp
- * public/portrait/003.webp
- * ...
- * public/portrait/450.webp
- */
+const GAIN = 1.5; // >1 = more sensitive: full head turn is reached before the cursor hits the screen edge
+const CURVE = 0.78; // <1 = small cursor movements already turn the head noticeably
+const SMOOTH_TIME = 0.26; // seconds of "lag" – lower = snappier, higher = calmer
+const MAX_SPEED = 70; // frames / second cap so the head never whips
 
-const FRAME_COUNT = 450;
-
-/*
- * IMPORTANT:
- *
- * i starts from 0 internally.
- *
- * i = 0  -> 001.webp
- * i = 1  -> 002.webp
- * i = 449 -> 450.webp
- */
-const frameUrl = (i) =>
-  `/portrait/${String(i + 1).padStart(3, "0")}.webp`;
-
-
-/* ------------------------------------------------------------------ */
-/*  HEAD TRACKING                                                     */
-/* ------------------------------------------------------------------ */
-
-/*
- * OLD:
- *
- * GAIN = 1.5
- *
- * This made the portrait very sensitive.
- *
- * NEW:
- *
- * GAIN = 0.75
- *
- * Approximately half the previous sensitivity.
- */
-const GAIN = 0.75;
-
-
-/*
- * 1.0 = linear cursor response.
- *
- * The previous 0.78 curve caused small cursor movements
- * to have a stronger effect.
- */
-const CURVE = 1.0;
-
-
-/*
- * Higher value = smoother and slower movement.
- *
- * Previous:
- * 0.26
- *
- * New:
- * 0.42
- */
-const SMOOTH_TIME = 0.42;
-
-
-/*
- * Maximum number of frames the portrait can travel
- * per second.
- *
- * Lower value prevents sudden whipping between frames.
- */
-const MAX_SPEED = 55;
-
-
-/* ------------------------------------------------------------------ */
-/*  CURSOR -> FRAME MAPPING                                           */
-/* ------------------------------------------------------------------ */
-
-/*
- * Instead of hard-coding frame numbers such as 29.5,
- * this maps the full 450-frame sequence automatically.
- *
- * 001.webp  = far left
- * ~112.webp = left
- * ~225.webp = center
- * ~337.webp = right
- * 450.webp  = far right
- */
-
+// cursor x (-1 … 1) -> frame index (0–59)
 const ANCHORS = [
-  [-1, 0],
-  [-0.5, Math.round((FRAME_COUNT - 1) * 0.25)],
-  [0, Math.round((FRAME_COUNT - 1) * 0.5)],
-  [0.5, Math.round((FRAME_COUNT - 1) * 0.75)],
-  [1, FRAME_COUNT - 1],
+  [-1, 3], //  far left   ≈ 45° left
+  [-0.5, 13], //  left       ≈ 20–30° left
+  [0, 21], //  center     ≈ 0° (facing the visitor)
+  [0.5, 36], //  right      ≈ 20–30° right
+  [1, 49], //  far right  ≈ 45° right
+];
+const POSTER_SRC = frameUrl(ANCHORS[2][1]); // centre frame, shown instantly while frames stream in
+
+// Floating geometric shapes. x/y = position (% of the hero), size in px,
+// depth = how much it drifts with the cursor (parallax), dur = float cycle in s.
+// Kept clear of the face (centre) and the text blocks (bottom corners).
+// On phones only the first four are shown.
+const SHAPES = [
+  { kind: "ring", x: 8, y: 20, size: 64, depth: 18, dur: 7 },
+  { kind: "triangle", x: 24, y: 12, size: 34, depth: 30, dur: 5.5, accent: true },
+  { kind: "square", x: 76, y: 14, size: 30, depth: 24, dur: 6.5 },
+  { kind: "plus", x: 90, y: 28, size: 22, depth: 36, dur: 4.5, accent: true },
+  { kind: "dots", x: 86, y: 44, size: 70, depth: 12, dur: 8 },
+  { kind: "ring", x: 68, y: 80, size: 18, depth: 40, dur: 5, accent: true },
+  { kind: "triangle", x: 56, y: 90, size: 24, depth: 26, dur: 7.5 },
 ];
 
+function ShapeSvg({ kind }) {
+  const s = { fill: "none", stroke: "currentColor", strokeWidth: 1.5, vectorEffect: "non-scaling-stroke" };
+  switch (kind) {
+    case "ring":
+      return <svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" {...s} /></svg>;
+    case "triangle":
+      return <svg viewBox="0 0 100 100"><path d="M50 6 L95 88 L5 88 Z" strokeLinejoin="round" {...s} /></svg>;
+    case "square":
+      return <svg viewBox="0 0 100 100"><rect x="8" y="8" width="84" height="84" {...s} /></svg>;
+    case "plus":
+      return <svg viewBox="0 0 100 100"><path d="M50 4 V96 M4 50 H96" strokeLinecap="round" {...s} /></svg>;
+    case "dots":
+      return (
+        <svg viewBox="0 0 100 100">
+          {Array.from({ length: 25 }, (_, i) => (
+            <circle key={i} cx={10 + (i % 5) * 20} cy={10 + Math.floor(i / 5) * 20} r="2.6" fill="currentColor" />
+          ))}
+        </svg>
+      );
+    default:
+      return null;
+  }
+}
+
+function FloatingShapes() {
+  return (
+    <div className="vr-shapes" aria-hidden="true">
+      {SHAPES.map((sh, i) => (
+        <div
+          key={i}
+          className={`vr-shape ${sh.accent ? "vr-shape--accent" : ""}`}
+          data-depth={sh.depth}
+          style={{ left: `${sh.x}%`, top: `${sh.y}%`, width: sh.size, height: sh.size }}
+        >
+          <span
+            className="vr-shape__float"
+            style={{ width: "100%", height: "100%", "--dur": `${sh.dur}s`, "--delay": `${-i * 1.3}s` }}
+          >
+            <ShapeSvg kind={sh.kind} />
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /* ------------------------------------------------------------------ */
-/*  TERMINAL TEXT                                                     */
+/*  Styles (inline so this stays one self-contained file)              */
 /* ------------------------------------------------------------------ */
+const CSS = `@import url("https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;600&display=swap");
 
-const TERMINAL_LINES = [
-  "FUTURE SYSTEM ONLINE",
-  "ARTIFICIAL INTELLIGENCE: ACTIVE",
-  "CREATIVE ENGINE: ACTIVE",
-  "PORTFOLIO TIMELINE: 2026",
-];
-
-
-/* ------------------------------------------------------------------ */
-/*  STYLES                                                             */
-/* ------------------------------------------------------------------ */
-
-const CSS = `
-@import url("https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;600&display=swap");
-
-
-/* ------------------------------------------------------------------ */
-/*  ROOT                                                               */
-/* ------------------------------------------------------------------ */
-
+/* The footage is shot on a light studio backdrop, so the hero stays light. */
 .vr-home {
   --bg: #f1f1f1;
   --ink: #111214;
   --mute: rgba(17, 18, 20, 0.58);
   --faint: rgba(17, 18, 20, 0.38);
   --line: rgba(17, 18, 20, 0.14);
-
   --accent: #6d35f5;
   --ok: #17a673;
-
-  --mono:
-    "JetBrains Mono",
-    ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    Consolas,
-    monospace;
-
-  --display:
-    "Space Grotesk",
-    "Helvetica Neue",
-    Arial,
-    sans-serif;
-
-  --serif:
-    "Instrument Serif",
-    Georgia,
-    "Times New Roman",
-    serif;
-
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --display: "Space Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --serif: "Instrument Serif", Georgia, "Times New Roman", serif;
   --pad: clamp(20px, 4vw, 56px);
-
-  --ease:
-    cubic-bezier(0.2, 0.7, 0.2, 1);
-
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
   --mx: 50%;
   --my: 50%;
 
   position: relative;
-
   height: 100svh;
   min-height: 680px;
-
   overflow: hidden;
-
-  background:
-    radial-gradient(
-      60% 55% at 50% 42%,
-      #f8f8f8 0%,
-      var(--bg) 70%
-    );
-
+  background: radial-gradient(60% 55% at 50% 42%, #f8f8f8 0%, var(--bg) 70%);
   color: var(--ink);
-
   font-family: var(--mono);
-
   -webkit-font-smoothing: antialiased;
 }
+.vr-home *, .vr-home *::before, .vr-home *::after { box-sizing: border-box; }
+.vr-home.has-cursor, .vr-home.has-cursor a, .vr-home.has-cursor button { cursor: none; }
 
-
-.vr-home *,
-.vr-home *::before,
-.vr-home *::after {
-  box-sizing: border-box;
-}
-
-
-.vr-home.has-cursor,
-.vr-home.has-cursor a,
-.vr-home.has-cursor button {
-  cursor: none;
-}
-
-
-/* ------------------------------------------------------------------ */
-/*  BACKGROUND                                                         */
-/* ------------------------------------------------------------------ */
-
+/* ---------- background ---------- */
 .vr-grid {
-  position: absolute;
-
-  inset: 0;
-
-  pointer-events: none;
-
-  background-image:
-    linear-gradient(
-      var(--line) 1px,
-      transparent 1px
-    ),
-    linear-gradient(
-      90deg,
-      var(--line) 1px,
-      transparent 1px
-    );
-
-  background-size: 88px 88px;
-
-  background-position: center;
-
+  position: absolute; inset: 0; pointer-events: none;
+  background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 88px 88px; background-position: center;
   opacity: 0.35;
-
-  -webkit-mask-image:
-    radial-gradient(
-      60% 60% at 50% 45%,
-      transparent 30%,
-      #000 100%
-    );
-
-  mask-image:
-    radial-gradient(
-      60% 60% at 50% 45%,
-      transparent 30%,
-      #000 100%
-    );
+  -webkit-mask-image: radial-gradient(60% 60% at 50% 45%, transparent 30%, #000 100%);
+  mask-image: radial-gradient(60% 60% at 50% 45%, transparent 30%, #000 100%);
 }
-
-
-.vr-grid--lit {
-  opacity: 1;
-
-  background-image:
-    linear-gradient(
-      rgba(109, 53, 245, 0.32) 1px,
-      transparent 1px
-    ),
-    linear-gradient(
-      90deg,
-      rgba(109, 53, 245, 0.32) 1px,
-      transparent 1px
-    );
-
-  -webkit-mask-image:
-    radial-gradient(
-      230px circle at var(--mx) var(--my),
-      #000 0%,
-      transparent 100%
-    );
-
-  mask-image:
-    radial-gradient(
-      230px circle at var(--mx) var(--my),
-      #000 0%,
-      transparent 100%
-    );
-}
-
-
-.vr-glow {
-  position: absolute;
-
-  inset: 0;
-
-  pointer-events: none;
-
-  background:
-    radial-gradient(
-      380px circle at var(--mx) var(--my),
-      rgba(109, 53, 245, 0.07),
-      transparent 70%
-    );
-}
-
-
-/* ------------------------------------------------------------------ */
-/*  TOP BAR                                                            */
-/* ------------------------------------------------------------------ */
-
-.vr-top {
-  position: absolute;
-
-  z-index: 6;
-
-  top: 28px;
-
-  left: var(--pad);
-  right: var(--pad);
-
-  display: flex;
-
-  justify-content: space-between;
-
-  align-items: center;
-
-  font-size: 11px;
-
-  letter-spacing: 0.18em;
-}
-
-
-.vr-mark {
-  display: flex;
-
-  align-items: center;
-
-  gap: 10px;
-
-  font-family: var(--display);
-
-  font-weight: 600;
-
-  letter-spacing: 0.22em;
-}
-
-
-.vr-mark i {
-  width: 22px;
-  height: 22px;
-
-  display: grid;
-
-  place-items: center;
-
-  border: 1px solid var(--ink);
-
-  font:
-    600 10px/1
-    var(--display);
-
-  letter-spacing: 0;
-}
-
-
-.vr-top nav {
-  display: flex;
-
-  gap: clamp(18px, 3vw, 40px);
-}
-
-
-.vr-top nav a {
-  position: relative;
-
-  color: var(--mute);
-
-  text-decoration: none;
-
-  padding: 6px 0;
-
-  transition: color 0.3s;
-}
-
-
-.vr-top nav a::after {
-  content: "";
-
-  position: absolute;
-
-  left: 0;
-  right: 0;
-
-  bottom: 0;
-
-  height: 1px;
-
-  background: var(--ink);
-
-  transform:
-    scaleX(0);
-
-  transform-origin: left;
-
-  transition:
-    transform
-    0.45s
-    var(--ease);
-}
-
-
-.vr-top nav a:hover {
-  color: var(--ink);
-}
-
-
-.vr-top nav a:hover::after {
-  transform: scaleX(1);
-}
-
-
-/* ------------------------------------------------------------------ */
-/*  PORTRAIT                                                           */
-/* ------------------------------------------------------------------ */
-
-.vr-stage {
-  position: absolute;
-
-  inset: 0;
-
-  pointer-events: none;
-}
-
-
-.vr-portrait {
-  position: absolute;
-
-  left: 50%;
-  bottom: 0;
-
-  transform:
-    translateX(-50%);
-
-  height:
-    min(94svh, 100vw);
-
-  aspect-ratio:
-    900 / 720;
-
-  opacity: 0;
-
-  transition:
-    opacity
-    1.4s
-    var(--ease)
-    0.2s;
-
-  -webkit-mask-image:
-    linear-gradient(
-      90deg,
-      transparent 0,
-      #000 12%,
-      #000 88%,
-      transparent 100%
-    ),
-    linear-gradient(
-      180deg,
-      transparent 0,
-      #000 8%
-    );
-
-  -webkit-mask-composite:
-    source-in;
-
-  mask-image:
-    linear-gradient(
-      90deg,
-      transparent 0,
-      #000 12%,
-      #000 88%,
-      transparent 100%
-    ),
-    linear-gradient(
-      180deg,
-      transparent 0,
-      #000 8%
-    );
-
-  mask-composite:
-    intersect;
-}
-
-
-.is-ready .vr-portrait {
-  opacity: 1;
-}
-
-
-.vr-canvas {
-  width: 100%;
-  height: 100%;
-
-  display: block;
-}
-
-
-/* ------------------------------------------------------------------ */
-/*  HUD                                                                */
-/* ------------------------------------------------------------------ */
-
-.vr-hud {
-  position: absolute;
-
-  top: 25%;
-
-  display: flex;
-
-  flex-direction: column;
-
-  gap: 6px;
-
-  font-size: 10px;
-
-  letter-spacing: 0.2em;
-
-  opacity: 0;
-
-  transform:
-    translateY(6px);
-
-  transition:
-    opacity 0.9s var(--ease) 1.1s,
-    transform 0.9s var(--ease) 1.1s;
-}
-
-
-.is-ready .vr-hud {
-  opacity: 1;
-
-  transform: none;
-}
-
-
-.vr-hud::before {
-  content: "";
-
-  width: 28px;
-
-  height: 1px;
-
-  background: var(--ink);
-
-  opacity: 0.4;
-
-  margin-bottom: 6px;
-}
-
-
-.vr-hud__label {
-  color: var(--faint);
-}
-
-
-.vr-hud__value {
-  font-family: var(--display);
-
-  font-weight: 500;
-
-  font-size:
-    clamp(
-      15px,
-      1.35vw,
-      20px
-    );
-
-  letter-spacing: 0.08em;
-
-  font-variant-numeric:
-    tabular-nums;
-}
-
-
-.vr-hud--id {
-  left:
-    calc(
-      50% +
-      min(15vw, 22svh) +
-      20px
-    );
-}
-
-
-.vr-hud--signal {
-  right:
-    calc(
-      50% +
-      min(15vw, 22svh) +
-      20px
-    );
-
-  align-items: flex-end;
-
-  text-align: right;
-}
-
-
-.vr-hud--signal::before {
-  align-self: flex-end;
-}
-
-
-.vr-hud--signal
-.vr-hud__value {
-  color: var(--accent);
-}
-
-
-.vr-hud__meter {
-  width: 96px;
-
-  height: 1px;
-
-  background: var(--line);
-
-  position: relative;
-
-  overflow: hidden;
-}
-
-
-.vr-hud__meter i {
-  position: absolute;
-
-  inset: 0;
-
-  background: var(--accent);
-
-  transform-origin: right;
-}
-
-
-/* ------------------------------------------------------------------ */
-/*  COPY                                                               */
-/* ------------------------------------------------------------------ */
-
-.vr-copy {
-  position: absolute;
-
-  z-index: 4;
-
-  left: var(--pad);
-
-  bottom:
-    clamp(
-      96px,
-      15vh,
-      140px
-    );
-
-  max-width:
-    min(
-      540px,
-      42vw
-    );
-}
-
-
-.vr-copy > * {
-  opacity: 0;
-
-  transform:
-    translateY(14px);
-
-  transition:
-    opacity 0.9s var(--ease),
-    transform 0.9s var(--ease);
-}
-
-
-.is-ready .vr-copy > * {
-  opacity: 1;
-
-  transform: none;
-}
-
-
-.is-ready
-.vr-copy > :nth-child(1) {
-  transition-delay: 0.25s;
-}
-
-
-.is-ready
-.vr-copy > :nth-child(2) {
-  transition-delay: 0.35s;
-}
-
-
-.is-ready
-.vr-copy > :nth-child(3) {
-  transition-delay: 0.45s;
-}
-
-
-.is-ready
-.vr-copy > :nth-child(4) {
-  transition-delay: 0.55s;
-}
-
-
-.is-ready
-.vr-copy > :nth-child(5) {
-  transition-delay: 0.65s;
-}
-
-
-.vr-role {
-  margin: 0 0 22px;
-
-  display: flex;
-
-  align-items: center;
-
-  gap: 14px;
-
-  font-size: 11px;
-
-  letter-spacing: 0.2em;
-
-  color: var(--mute);
-}
-
-
-.vr-role::before {
-  content: "";
-
-  width: 32px;
-
-  height: 1px;
-
-  background: var(--ink);
-}
-
-
-.vr-name {
-  margin: 0 0 14px;
-
-  font-family: var(--display);
-
-  font-weight: 600;
-
-  font-size:
-    clamp(
-      20px,
-      2vw,
-      30px
-    );
-
-  letter-spacing: 0.24em;
-}
-
-
-.vr-subline {
-  margin: 0 0 24px;
-
-  display: flex;
-
-  flex-direction: column;
-
-  font-family: var(--serif);
-
-  font-weight: 400;
-
-  font-size:
-    clamp(
-      48px,
-      6.4vw,
-      108px
-    );
-
-  line-height: 0.92;
-
-  letter-spacing: -0.02em;
-}
-
-
-.vr-subline
-span:last-child {
-  font-style: italic;
-
-  color: var(--mute);
-}
-
-
-.vr-intro {
-  margin: 0 0 32px;
-
-  max-width: 40ch;
-
-  font-size: 13px;
-
-  line-height: 1.8;
-
-  color: var(--mute);
-}
-
-
-.vr-actions {
-  display: flex;
-
-  flex-wrap: wrap;
-
-  gap: 12px;
-}
-
-
-.vr-btn {
-  font:
-    500 11px/1
-    var(--mono);
-
-  letter-spacing: 0.18em;
-
-  padding: 17px 24px;
-
-  border:
-    1px solid
-    var(--ink);
-
-  border-radius: 2px;
-
-  display: inline-flex;
-
-  align-items: center;
-
-  gap: 12px;
-
-  transition:
-    background 0.35s,
-    color 0.35s,
-    border-color 0.35s,
-    transform 0.25s ease-out;
-
+/* the grid brightens around the cursor: a fixed-size masked window moved by
+   transform (the grid inside counter-moves), so nothing is repainted per frame */
+.vr-lit {
+  position: absolute; left: 0; top: 0; width: 460px; height: 460px; pointer-events: none; overflow: hidden;
+  -webkit-mask-image: radial-gradient(closest-side, #000 0%, transparent 100%);
+  mask-image: radial-gradient(closest-side, #000 0%, transparent 100%);
   will-change: transform;
 }
+.vr-lit__grid {
+  position: absolute; left: 0; top: 0;
+  background-image: linear-gradient(rgba(109, 53, 245, 0.32) 1px, transparent 1px), linear-gradient(90deg, rgba(109, 53, 245, 0.32) 1px, transparent 1px);
+  background-size: 88px 88px; background-position: center;
+  will-change: transform;
+}
+.vr-glow {
+  position: absolute; left: 0; top: 0; width: 760px; height: 760px; pointer-events: none;
+  background: radial-gradient(closest-side, rgba(109, 53, 245, 0.07), transparent 70%);
+  will-change: transform;
+}
+.vr-lit, .vr-glow { opacity: 0; transition: opacity 0.4s; }
+.cur-on .vr-lit, .cur-on .vr-glow { opacity: 1; }
 
+/* ---------- top bar ---------- */
+.vr-top {
+  position: absolute; z-index: 6; top: 28px; left: var(--pad); right: var(--pad);
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 11px; letter-spacing: 0.18em;
+}
+.vr-mark { display: flex; align-items: center; gap: 10px; font-family: var(--display); font-weight: 600; letter-spacing: 0.22em; }
+.vr-mark i { width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid var(--ink); font: 600 10px/1 var(--display); letter-spacing: 0; }
+.vr-top nav { display: flex; gap: clamp(18px, 3vw, 40px); }
+.vr-top nav a, .vr-social a { text-transform: uppercase; }
+.vr-top nav a { position: relative; color: var(--mute); text-decoration: none; padding: 6px 0; transition: color 0.3s; }
+.vr-top nav a::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: var(--ink); transform: scaleX(0); transform-origin: left; transition: transform 0.45s var(--ease); }
+.vr-top nav a:hover { color: var(--ink); }
+.vr-top nav a:hover::after { transform: scaleX(1); }
 
-.vr-btn--primary {
-  background: var(--ink);
+/* ---------- portrait ---------- */
+.vr-stage { position: absolute; inset: 0; pointer-events: none; }
+.vr-portrait {
+  position: absolute; left: 50%; bottom: 0; transform: translateX(-50%);
+  height: min(94svh, 56.25vw); aspect-ratio: 16 / 9;
+  opacity: 0; transition: opacity 1.4s var(--ease) 0.2s;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 12%, #000 88%, transparent 100%), linear-gradient(180deg, transparent 0, #000 8%);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(90deg, transparent 0, #000 12%, #000 88%, transparent 100%), linear-gradient(180deg, transparent 0, #000 8%);
+  mask-composite: intersect;
+}
+.is-ready .vr-portrait { opacity: 1; }
+.vr-media { position: relative; width: 100%; height: 100%; }
+.vr-poster, .vr-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: fill; }
+.vr-canvas { opacity: 0; transition: opacity 0.5s ease; }
+.vr-media.is-live .vr-canvas { opacity: 1; }
 
-  color: #f4f4f4;
+/* ---------- floating geometric shapes ---------- */
+.vr-shapes { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+.vr-shape {
+  position: absolute; color: var(--ink);
+  opacity: 0; transition: opacity 1.2s var(--ease);
+  will-change: transform;
+}
+.is-ready .vr-shape { opacity: 0.32; }
+.vr-shape--accent { color: var(--accent); }
+.is-ready .vr-shape--accent { opacity: 0.55; }
+.vr-shape__float { display: block; animation: vr-float var(--dur) ease-in-out infinite alternate; animation-delay: var(--delay); }
+.vr-shape svg { display: block; width: 100%; height: 100%; overflow: visible; }
+@keyframes vr-float {
+  0% { transform: translate3d(0, -10px, 0) rotate(-8deg); }
+  100% { transform: translate3d(0, 10px, 0) rotate(8deg); }
 }
 
-
-.vr-btn--primary:hover {
-  background: var(--accent);
-
-  border-color:
-    var(--accent);
+/* ---------- copy ---------- */
+.vr-copy { position: absolute; z-index: 4; left: var(--pad); bottom: clamp(96px, 15vh, 140px); max-width: min(540px, 42vw); }
+.vr-copy > * { opacity: 0; transform: translateY(14px); transition: opacity 0.9s var(--ease), transform 0.9s var(--ease); }
+.is-ready .vr-copy > * { opacity: 1; transform: none; }
+.is-ready .vr-copy > :nth-child(1) { transition-delay: 0.25s; }
+.is-ready .vr-copy > :nth-child(2) { transition-delay: 0.35s; }
+.is-ready .vr-copy > :nth-child(3) { transition-delay: 0.45s; }
+.is-ready .vr-copy > :nth-child(4) { transition-delay: 0.55s; }
+.is-ready .vr-copy > :nth-child(5) { transition-delay: 0.65s; }
+.vr-role { margin: 0 0 22px; display: flex; align-items: center; gap: 14px; font-size: 11px; letter-spacing: 0.2em; color: var(--mute); }
+.vr-role::before { content: ""; width: 32px; height: 1px; background: var(--ink); }
+.vr-name { margin: 0 0 14px; font-family: var(--display); font-weight: 600; font-size: clamp(20px, 2vw, 30px); letter-spacing: 0.24em; }
+.vr-subline { margin: 0 0 24px; display: flex; flex-direction: column; font-family: var(--serif); font-weight: 400; font-size: clamp(40px, 4.8vw, 80px); line-height: 0.98; letter-spacing: -0.02em; }
+.vr-subline span:last-child { font-style: italic; color: var(--mute); }
+.vr-intro { margin: 0 0 32px; max-width: 40ch; font-size: 13px; line-height: 1.8; color: var(--mute); }
+.vr-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.vr-btn {
+  font: 500 11px/1 var(--mono); letter-spacing: 0.18em; padding: 17px 24px;
+  border: 1px solid var(--ink); border-radius: 2px; display: inline-flex; align-items: center; gap: 12px;
+  transition: background 0.35s, color 0.35s, border-color 0.35s, transform 0.25s ease-out;
+  will-change: transform;
 }
+.vr-btn--primary { background: var(--ink); color: #f4f4f4; }
+.vr-btn--primary:hover { background: var(--accent); border-color: var(--accent); }
+.vr-btn--primary span { transition: transform 0.35s var(--ease); }
+.vr-btn--primary:hover span { transform: translateX(4px); }
+.vr-btn--ghost { background: transparent; color: var(--ink); }
+.vr-btn--ghost:hover { background: var(--ink); color: #f4f4f4; }
+.vr-btn:focus-visible, .vr-scroll:focus-visible, .vr-top a:focus-visible, .vr-social a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
-
-.vr-btn--primary span {
-  transition:
-    transform
-    0.35s
-    var(--ease);
+/* ---------- quick facts ---------- */
+.vr-facts {
+  position: absolute; z-index: 4; right: var(--pad); bottom: clamp(96px, 15vh, 140px); width: min(300px, 26vw);
+  margin: 0; padding: 18px 20px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--line); border-radius: 2px;
+  opacity: 0; transform: translateY(10px); transition: opacity 0.9s var(--ease) 0.7s, transform 0.9s var(--ease) 0.7s;
 }
-
-
-.vr-btn--primary:hover
-span {
-  transform:
-    translateX(4px);
-}
-
-
-.vr-btn--ghost {
-  background: transparent;
-
-  color: var(--ink);
-}
-
-
-.vr-btn--ghost:hover {
-  background: var(--ink);
-
-  color: #f4f4f4;
-}
-
-
-.vr-btn:focus-visible,
-.vr-scroll:focus-visible,
-.vr-top a:focus-visible,
-.vr-social a:focus-visible {
-  outline:
-    2px solid
-    var(--accent);
-
-  outline-offset: 3px;
-}
-
-
-/* ------------------------------------------------------------------ */
-/*  TERMINAL                                                           */
-/* ------------------------------------------------------------------ */
-
-.vr-terminal {
-  position: absolute;
-
-  z-index: 4;
-
-  right: var(--pad);
-
-  bottom:
-    clamp(
-      96px,
-      15vh,
-      140px
-    );
-
-  width:
-    min(
-      320px,
-      27vw
-    );
-
-  padding:
-    16px 18px;
-
-  font-size: 10.5px;
-
-  letter-spacing: 0.12em;
-
-  background:
-    rgba(
-      255,
-      255,
-      255,
-      0.55
-    );
-
-  -webkit-backdrop-filter:
-    blur(10px);
-
-  backdrop-filter:
-    blur(10px);
-
-  border:
-    1px solid
-    var(--line);
-
-  border-left:
-    2px solid
-    var(--accent);
-
-  border-radius: 2px;
-
-  opacity: 0;
-
-  transition:
-    opacity
-    0.9s
-    var(--ease)
-    0.8s;
-}
-
-
-.is-ready .vr-terminal {
-  opacity: 1;
-}
-
-
-.vr-terminal ul {
-  list-style: none;
-
-  margin: 0;
-
-  padding: 0;
-
-  display: flex;
-
-  flex-direction: column;
-
-  gap: 11px;
-
-  min-height: 96px;
-}
-
-
-.vr-terminal li {
-  display: flex;
-
-  align-items: center;
-
-  gap: 10px;
-
-  min-height: 14px;
-
-  line-height: 1.4;
-}
-
-
-.vr-terminal__mark {
-  width: 5px;
-
-  height: 5px;
-
-  border-radius: 50%;
-
-  background:
-    var(--faint);
-
-  flex: none;
-
-  transition:
-    background 0.3s;
-}
-
-
-.vr-terminal li.is-done
-.vr-terminal__mark {
-  background:
-    var(--ok);
-}
-
-
-.vr-caret {
-  width: 6px;
-
-  height: 11px;
-
-  background:
-    var(--ink);
-
-  display: inline-block;
-}
-
-
-.vr-caret--blink {
-  animation:
-    vr-blink
-    1s
-    steps(2, start)
-    infinite;
-}
-
-
-@keyframes vr-blink {
-  to {
-    visibility: hidden;
-  }
-}
-
-
-/* ------------------------------------------------------------------ */
-/*  FOOTER                                                             */
-/* ------------------------------------------------------------------ */
-
-.vr-foot {
-  position: absolute;
-
-  z-index: 5;
-
-  left: var(--pad);
-
-  right: var(--pad);
-
-  bottom: 22px;
-
-  display: flex;
-
-  justify-content:
-    space-between;
-
-  align-items:
-    flex-end;
-
-  font-size: 10px;
-
-  letter-spacing: 0.2em;
-}
-
-
-.vr-status {
-  display: flex;
-
-  align-items: center;
-
-  gap: 10px;
-
-  color: var(--mute);
-
-  padding-bottom: 4px;
-}
-
-
-.vr-pulse {
-  position: relative;
-
-  width: 7px;
-
-  height: 7px;
-
-  border-radius: 50%;
-
-  background: var(--ok);
-}
-
-
-.vr-pulse::after {
-  content: "";
-
-  position: absolute;
-
-  inset: 0;
-
-  border-radius: 50%;
-
-  background: var(--ok);
-
-  animation:
-    vr-ping
-    2.2s
-    ease-out
-    infinite;
-}
-
-
-@keyframes vr-ping {
-  0% {
-    transform: scale(1);
-
-    opacity: 0.6;
-  }
-
-  100% {
-    transform: scale(3.2);
-
-    opacity: 0;
-  }
-}
-
-
-.vr-social {
-  display: flex;
-
-  gap: 22px;
-
-  padding-bottom: 4px;
-}
-
-
-.vr-social a {
-  color: var(--mute);
-
-  text-decoration: none;
-
-  transition:
-    color 0.3s;
-}
-
-
-.vr-social a:hover {
-  color: var(--ink);
-}
-
-
+.is-ready .vr-facts { opacity: 1; transform: none; }
+.vr-facts__row { display: grid; gap: 4px; padding: 11px 0; border-top: 1px solid var(--line); }
+.vr-facts__row:first-child { border-top: 0; padding-top: 0; }
+.vr-facts__row:last-child { padding-bottom: 0; }
+.vr-facts dt { font-size: 9.5px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--faint); }
+.vr-facts dd { margin: 0; font-family: var(--display); font-weight: 500; font-size: 13.5px; line-height: 1.4; }
+
+/* ---------- footer ---------- */
+.vr-foot { position: absolute; z-index: 5; left: var(--pad); right: var(--pad); bottom: 22px; display: flex; justify-content: space-between; align-items: flex-end; font-size: 10px; letter-spacing: 0.2em; }
+.vr-status { display: flex; align-items: center; gap: 10px; color: var(--mute); padding-bottom: 4px; }
+.vr-pulse { position: relative; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+.vr-pulse::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--ok); animation: vr-ping 2.2s ease-out infinite; }
+@keyframes vr-ping { 0% { transform: scale(1); opacity: 0.6; } 100% { transform: scale(3.2); opacity: 0; } }
+.vr-social { display: flex; gap: 22px; padding-bottom: 4px; }
+.vr-social a { color: var(--mute); text-decoration: none; transition: color 0.3s; }
+.vr-social a:hover { color: var(--ink); }
 .vr-scroll {
-  position: absolute;
-
-  left: 50%;
-
-  bottom: 0;
-
-  transform:
-    translateX(-50%);
-
-  display: flex;
-
-  flex-direction: column;
-
-  align-items: center;
-
-  gap: 10px;
-
-  padding:
-    6px 12px;
-
-  background: none;
-
-  border: 0;
-
-  color: var(--mute);
-
-  font:
-    400 10px/1
-    var(--mono);
-
-  letter-spacing: 0.28em;
-
-  transition:
-    color 0.3s;
+  position: absolute; left: 50%; bottom: 0; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 6px 12px;
+  background: none; border: 0; color: var(--mute); font: 400 10px/1 var(--mono); letter-spacing: 0.28em; transition: color 0.3s;
 }
-
-
-.vr-scroll:hover {
-  color: var(--ink);
-}
-
-
-.vr-scroll i {
-  width: 1px;
-
-  height: 30px;
-
-  background:
-    linear-gradient(
-      var(--ink),
-      transparent
-    );
-
-  transform-origin: top;
-
-  animation:
-    vr-decode
-    2.2s
-    cubic-bezier(
-      0.6,
-      0,
-      0.2,
-      1
-    )
-    infinite;
-}
-
-
-@keyframes vr-decode {
-  0% {
-    transform:
-      scaleY(0);
-
-    opacity: 1;
-  }
-
-  60% {
-    transform:
-      scaleY(1);
-
-    opacity: 1;
-  }
-
-  100% {
-    transform:
-      scaleY(1);
-
-    opacity: 0;
-  }
-}
-
-
-/* ------------------------------------------------------------------ */
-/*  LOADER                                                             */
-/* ------------------------------------------------------------------ */
-
-.vr-loader {
-  position: absolute;
-
-  inset: 0;
-
-  z-index: 20;
-
-  display: grid;
-
-  place-items: center;
-
-  background:
-    var(--bg);
-
-  color:
-    var(--mute);
-
-  font-size: 10px;
-
-  letter-spacing: 0.24em;
-
-  text-align: center;
-
-  transition:
-    opacity 0.9s ease,
-    visibility 0.9s;
-}
-
-
-.is-ready .vr-loader {
-  opacity: 0;
-
-  visibility: hidden;
-}
-
-
-.vr-loader__line {
-  position: relative;
-
-  overflow: hidden;
-
-  width: 140px;
-
-  height: 1px;
-
-  margin:
-    16px auto 0;
-
-  background:
-    var(--line);
-}
-
-
-.vr-loader__line i {
-  position: absolute;
-
-  inset: 0;
-
-  background:
-    var(--ink);
-
-  transform:
-    scaleX(0);
-
-  transform-origin: left;
-
-  transition:
-    transform 0.2s;
-}
-
-
-/* ------------------------------------------------------------------ */
-/*  CUSTOM CURSOR                                                      */
-/* ------------------------------------------------------------------ */
-
-.vr-cur {
-  position: fixed;
-
-  left: 0;
-  top: 0;
-
-  z-index: 100;
-
-  pointer-events: none;
-
-  opacity: 0;
-
-  transition:
-    opacity 0.3s;
-}
-
-
-.has-cursor.cur-on
-.vr-cur {
-  opacity: 1;
-}
-
-
-.vr-cur__dot {
-  width: 6px;
-
-  height: 6px;
-
-  margin:
-    -3px 0 0 -3px;
-
-  border-radius: 50%;
-
-  background:
-    var(--ink);
-
-  transition:
-    background 0.25s;
-}
-
-
-.vr-cur__ring {
-  width: 38px;
-
-  height: 38px;
-
-  margin:
-    -19px 0 0 -19px;
-}
-
-
-.vr-cur__ring i {
-  display: block;
-
-  width: 100%;
-  height: 100%;
-
-  border-radius: 50%;
-
-  border:
-    1px solid
-    var(--ink);
-
-  opacity: 0.45;
-
-  transition:
-    transform 0.35s var(--ease),
-    background 0.3s,
-    border-color 0.3s,
-    opacity 0.3s;
-}
-
-
-.vr-cur__ring.is-hover i {
-  transform:
-    scale(1.55);
-
-  background:
-    rgba(
-      109,
-      53,
-      245,
-      0.10
-    );
-
-  border-color:
-    var(--accent);
-
-  opacity: 0.9;
-}
-
-
-.vr-cur__ring.is-down i {
-  transform:
-    scale(0.7);
-}
-
-
-.vr-cur__ring.is-hover.is-down i {
-  transform:
-    scale(1.2);
-}
-
-
-.vr-cur__dot.is-hover {
-  background:
-    var(--accent);
-}
-
-
-/* ------------------------------------------------------------------ */
-/*  RESPONSIVE                                                         */
-/* ------------------------------------------------------------------ */
-
+.vr-scroll:hover { color: var(--ink); }
+.vr-scroll i { width: 1px; height: 30px; background: linear-gradient(var(--ink), transparent); transform-origin: top; animation: vr-decode 2.2s cubic-bezier(0.6, 0, 0.2, 1) infinite; }
+@keyframes vr-decode { 0% { transform: scaleY(0); opacity: 1; } 60% { transform: scaleY(1); opacity: 1; } 100% { transform: scaleY(1); opacity: 0; } }
+
+/* ---------- custom cursor ---------- */
+.vr-cur { position: fixed; left: 0; top: 0; z-index: 100; pointer-events: none; opacity: 0; transition: opacity 0.3s; }
+.has-cursor.cur-on .vr-cur { opacity: 1; }
+.vr-cur__dot { width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--ink); transition: background 0.25s; }
+.vr-cur__ring { width: 38px; height: 38px; margin: -19px 0 0 -19px; }
+.vr-cur__ring i { display: block; width: 100%; height: 100%; border-radius: 50%; border: 1px solid var(--ink); opacity: 0.45; transition: transform 0.35s var(--ease), background 0.3s, border-color 0.3s, opacity 0.3s; }
+.vr-cur__ring.is-hover i { transform: scale(1.55); background: rgba(109, 53, 245, 0.10); border-color: var(--accent); opacity: 0.9; }
+.vr-cur__ring.is-down i { transform: scale(0.7); }
+.vr-cur__ring.is-hover.is-down i { transform: scale(1.2); }
+.vr-cur__dot.is-hover { background: var(--accent); }
+
+/* ---------- responsive ---------- */
 @media (max-width: 1100px) {
-  .vr-terminal {
-    width: 290px;
-  }
-
-  .vr-hud {
-    top: 21%;
-  }
+  .vr-facts { width: 260px; }
 }
-
-
 @media (max-width: 820px) {
-  .vr-home {
-    min-height: 760px;
-  }
-
-  .vr-top nav a:nth-child(n + 3) {
-    display: none;
-  }
-
-  .vr-portrait {
-    height:
-      min(
-        58svh,
-        130vw
-      );
-
-    bottom: auto;
-
-    top: 76px;
-  }
-
-  .vr-hud {
-    top: 96px;
-  }
-
-  .vr-hud--id {
-    left: auto;
-
-    right: var(--pad);
-  }
-
-  .vr-hud--signal {
-    right: auto;
-
-    left: var(--pad);
-
-    align-items:
-      flex-start;
-
-    text-align:
-      left;
-  }
-
-  .vr-hud--signal::before {
-    align-self:
-      flex-start;
-  }
-
-  .vr-copy {
-    left: var(--pad);
-
-    right: var(--pad);
-
-    bottom: 84px;
-
-    max-width: none;
-  }
-
-  .vr-subline {
-    font-size:
-      clamp(
-        42px,
-        13vw,
-        72px
-      );
-  }
-
-  .vr-intro {
-    font-size: 12px;
-
-    margin-bottom: 20px;
-  }
-
-  .vr-terminal,
-  .vr-status,
-  .vr-social {
-    display: none;
-  }
+  .vr-home { min-height: 760px; }
+  .vr-top nav a:nth-child(n + 3) { display: none; }
+  .vr-portrait { height: min(58svh, 90vw); bottom: auto; top: 76px; }
+  .vr-copy { left: var(--pad); right: var(--pad); bottom: 84px; max-width: none; }
+  .vr-subline { font-size: clamp(38px, 11vw, 64px); }
+  .vr-intro { font-size: 12px; margin-bottom: 20px; }
+  .vr-facts, .vr-status, .vr-social { display: none; }
+  .vr-shape:nth-child(n + 5) { display: none; }
 }
-
-
-/* ------------------------------------------------------------------ */
-/*  REDUCED MOTION                                                     */
-/* ------------------------------------------------------------------ */
-
 @media (prefers-reduced-motion: reduce) {
-  .vr-portrait,
-  .vr-hud,
-  .vr-copy > *,
-  .vr-terminal,
-  .vr-loader {
-    transition: none;
-  }
-
-  .vr-scroll i,
-  .vr-caret--blink,
-  .vr-pulse::after {
-    animation: none;
-  }
+  .vr-portrait, .vr-copy > *, .vr-facts, .vr-canvas, .vr-shape { transition: none; }
+  .vr-scroll i, .vr-pulse::after, .vr-shape__float { animation: none; }
 }
 `;
 
-
 /* ------------------------------------------------------------------ */
-/*  HELPERS                                                            */
+/*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
-
-const clamp = (v, a, b) =>
-  Math.max(a, Math.min(b, v));
-
-
-const prefersReducedMotion = () =>
-  window.matchMedia(
-    "(prefers-reduced-motion: reduce)"
-  ).matches;
-
-
-/* ------------------------------------------------------------------ */
-/*  CURSOR X -> FRAME INDEX                                            */
-/* ------------------------------------------------------------------ */
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const prefersReducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function xToIndex(x) {
-  /*
-   * Reduce sensitivity by 50%.
-   */
-  x = clamp(
-    x * GAIN,
-    -1,
-    1
-  );
-
-
-  /*
-   * Linear response.
-   */
-  x =
-    Math.sign(x) *
-    Math.pow(
-      Math.abs(x),
-      CURVE
-    );
-
-
-  /*
-   * Interpolate between anchor points.
-   */
-  for (
-    let i = 0;
-    i < ANCHORS.length - 1;
-    i++
-  ) {
-    const left =
-      ANCHORS[i];
-
-    const right =
-      ANCHORS[i + 1];
-
-
-    if (
-      x <= right[0]
-    ) {
-      const t =
-        (x - left[0]) /
-        (right[0] - left[0]);
-
-
-      return (
-        left[1] +
-        (right[1] - left[1]) *
-          t
-      );
+  // gain + curve make the head react earlier and more visibly to small cursor moves
+  x = clamp(x * GAIN, -1, 1);
+  x = Math.sign(x) * Math.pow(Math.abs(x), CURVE);
+  for (let i = 0; i < ANCHORS.length - 1; i++) {
+    if (x <= ANCHORS[i + 1][0]) {
+      const t = (x - ANCHORS[i][0]) / (ANCHORS[i + 1][0] - ANCHORS[i][0]);
+      return ANCHORS[i][1] + (ANCHORS[i + 1][1] - ANCHORS[i][1]) * t;
     }
   }
-
-
-  return ANCHORS[
-    ANCHORS.length - 1
-  ][1];
+  return ANCHORS[ANCHORS.length - 1][1];
 }
 
-
-/* ------------------------------------------------------------------ */
-/*  SMOOTH DAMP                                                        */
-/* ------------------------------------------------------------------ */
-
-function smoothDamp(
-  cur,
-  target,
-  vel,
-  smoothTime,
-  maxSpeed,
-  dt
-) {
-  const omega =
-    2 / smoothTime;
-
-  const x =
-    omega * dt;
-
-  const exp =
-    1 /
-    (
-      1 +
-      x +
-      0.48 * x * x +
-      0.235 * x * x * x
-    );
-
-
-  const maxChange =
-    maxSpeed *
-    smoothTime;
-
-
-  const change =
-    clamp(
-      cur - target,
-      -maxChange,
-      maxChange
-    );
-
-
-  const tempTarget =
-    cur - change;
-
-
-  const temp =
-    (vel +
-      omega * change) *
-    dt;
-
-
-  vel =
-    (vel -
-      omega * temp) *
-    exp;
-
-
-  let output =
-    tempTarget +
-    (change + temp) *
-      exp;
-
-
-  /*
-   * Prevent overshooting.
-   */
-  if (
-    (
-      target - cur > 0 &&
-      output > target
-    ) ||
-    (
-      target - cur < 0 &&
-      output < target
-    )
-  ) {
-    output = target;
-
-    vel = 0;
+// Critically damped spring (SmoothDamp): eases in and out, never snaps.
+function smoothDamp(cur, target, vel, smoothTime, maxSpeed, dt) {
+  const omega = 2 / smoothTime;
+  const x = omega * dt;
+  const exp = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);
+  const maxChange = maxSpeed * smoothTime;
+  const change = clamp(cur - target, -maxChange, maxChange);
+  const t2 = cur - change;
+  const temp = (vel + omega * change) * dt;
+  vel = (vel - omega * temp) * exp;
+  let out = t2 + (change + temp) * exp;
+  if (target - cur > 0 === out > target) {
+    out = target;
+    vel = (out - target) / dt;
   }
-
-
-  return [
-    output,
-    vel,
-  ];
+  return [out, vel];
 }
 
-
 /* ------------------------------------------------------------------ */
-/*  LIVING PORTRAIT                                                    */
+/*  Living portrait – frames drawn on a canvas, cross-faded, spring-    */
+/*  driven by the cursor. Frames stream in centre-out and are decoded   */
+/*  once (downscaled), so moving never waits on a decode.               */
 /* ------------------------------------------------------------------ */
-
-function LivingPortrait({
-  onProgress,
-  onReady,
-}) {
-  const canvasRef =
-    useRef(null);
-
+function LivingPortrait() {
+  const canvasRef = useRef(null);
+  const [live, setLive] = useState(false);
 
   useEffect(() => {
-    const canvas =
-      canvasRef.current;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d", { alpha: false }); // opaque frames: cheaper to composite
+    const reduced = prefersReducedMotion();
+    const center = xToIndex(0);
 
-    if (!canvas) return;
-
-
-    const ctx =
-      canvas.getContext(
-        "2d",
-        {
-          alpha: true,
-
-          /*
-           * Helps reduce latency on supported browsers.
-           */
-          desynchronized: true,
-        }
-      );
-
-
-    if (!ctx) return;
-
-
-    /*
-     * Store all decoded images.
-     */
-    const frames =
-      new Array(
-        FRAME_COUNT
-      );
-
-
-    const reduced =
-      prefersReducedMotion();
-
-
-    /*
-     * Exact center frame.
-     *
-     * For 450 frames:
-     * center ≈ frame 225.
-     */
-    const center =
-      xToIndex(0);
-
-
-    let target =
-      center;
-
-
-    let position =
-      center;
-
-
-    let velocity = 0;
-
-
-    let raf = 0;
-
-    let lastTime = 0;
+    // Every frame is decoded once, downscaled to the canvas size, and kept –
+    // so the head never lands on a frame that is still decoding (no stutter).
+    const bitmaps = new Array(TOTAL_FRAMES);
+    const decodeOpts = { resizeWidth: FRAME_W, resizeHeight: FRAME_H, resizeQuality: "high" };
 
     let alive = true;
+    let started = false;
+    let raf = 0;
+    let last = 0;
+    let pos = center;
+    let vel = 0;
+    let target = center;
+    let drawn = -1; // position last painted, to skip redundant redraws
+    let dirty = true; // a new frame arrived that may improve the current picture
+    // unbroken run of decoded frames around the centre – the head only turns within it,
+    // so while frames are still arriving it never jumps to a far-away frame
+    let lo = Math.round(center);
+    let hi = lo;
+    const grow = () => {
+      while (lo > 0 && bitmaps[lo - 1]) lo--;
+      while (hi < TOTAL_FRAMES - 1 && bitmaps[hi + 1]) hi++;
+    };
 
-
-    /* -------------------------------------------------------------- */
-    /* Draw portrait                                                   */
-    /* -------------------------------------------------------------- */
+    // closest decoded frame to i (falls back gracefully while frames are still arriving)
+    const nearest = (i) => {
+      for (let d = 0; d < TOTAL_FRAMES; d++) {
+        if (bitmaps[i - d]) return i - d;
+        if (bitmaps[i + d]) return i + d;
+      }
+      return -1;
+    };
 
     const draw = (p) => {
-      p =
-        clamp(
-          p,
-          0,
-          FRAME_COUNT - 1
-        );
-
-
-      /*
-       * Current frame.
-       */
-      const a =
-        Math.floor(p);
-
-
-      /*
-       * Next frame.
-       */
-      const b =
-        Math.min(
-          FRAME_COUNT - 1,
-          a + 1
-        );
-
-
-      /*
-       * Fraction between the two frames.
-       *
-       * Example:
-       *
-       * p = 100.25
-       *
-       * frame 100 = 75%
-       * frame 101 = 25%
-       */
-      const blend =
-        p - a;
-
-
-      const frameA =
-        frames[a];
-
-
-      const frameB =
-        frames[b];
-
-
-      /*
-       * If current frame isn't loaded yet,
-       * don't draw a blank canvas.
-       */
-      if (!frameA) {
-        return;
-      }
-
-
-      /*
-       * Clear previous frame.
-       */
-      ctx.clearRect(
-        0,
-        0,
-        canvas.width,
-        canvas.height
-      );
-
-
-      /*
-       * Draw current frame.
-       */
+      p = clamp(p, 0, TOTAL_FRAMES - 1);
+      const a = Math.floor(p);
+      const b = Math.min(a + 1, TOTAL_FRAMES - 1);
+      const f = p - a;
+      const ia = bitmaps[a] ? a : nearest(a);
+      if (ia < 0) return;
       ctx.globalAlpha = 1;
-
-
-      ctx.drawImage(
-        frameA,
-        0,
-        0,
-        canvas.width,
-        canvas.height
-      );
-
-
-      /*
-       * Smoothly blend into the next frame.
-       *
-       * This is what removes the obvious
-       * "frame 1 -> frame 2 -> frame 3"
-       * stepping effect.
-       */
-      if (
-        blend > 0.001 &&
-        frameB &&
-        frameB !== frameA
-      ) {
-        ctx.globalAlpha =
-          blend;
-
-
-        ctx.drawImage(
-          frameB,
-          0,
-          0,
-          canvas.width,
-          canvas.height
-        );
-
-
-        ctx.globalAlpha = 1;
+      ctx.drawImage(bitmaps[ia], 0, 0, canvas.width, canvas.height);
+      if (f > 0.02) {
+        const ib = bitmaps[b] ? b : nearest(b);
+        if (ib >= 0 && ib !== ia) {
+          ctx.globalAlpha = f; // cross-fade between neighbouring frames
+          ctx.drawImage(bitmaps[ib], 0, 0, canvas.width, canvas.height);
+          ctx.globalAlpha = 1;
+        }
       }
     };
-
-
-    /* -------------------------------------------------------------- */
-    /* Pointer movement                                                */
-    /* -------------------------------------------------------------- */
 
     const onMove = (e) => {
-      /*
-       * Convert cursor position:
-       *
-       * left edge  = -1
-       * center      = 0
-       * right edge = +1
-       */
-      const normalizedX =
-        (e.clientX /
-          window.innerWidth) *
-          2 -
-        1;
-
-
-      target =
-        xToIndex(
-          normalizedX
-        );
+      target = xToIndex((e.clientX / window.innerWidth) * 2 - 1);
     };
-
-
-    /*
-     * When cursor leaves the window,
-     * smoothly return to center.
-     */
     const toCenter = () => {
       target = center;
     };
-
-
-    window.addEventListener(
-      "pointermove",
-      onMove,
-      {
-        passive: true,
-      }
-    );
-
-
-    window.addEventListener(
-      "pointerdown",
-      onMove,
-      {
-        passive: true,
-      }
-    );
-
-
-    document.documentElement.addEventListener(
-      "mouseleave",
-      toCenter
-    );
-
-
-    window.addEventListener(
-      "blur",
-      toCenter
-    );
-
-
-    /* -------------------------------------------------------------- */
-    /* Animation loop                                                  */
-    /* -------------------------------------------------------------- */
+    window.addEventListener("pointermove", onMove, { passive: true });
+    window.addEventListener("pointerdown", onMove, { passive: true });
+    document.documentElement.addEventListener("mouseleave", toCenter);
+    window.addEventListener("blur", toCenter);
 
     const tick = (now) => {
-      if (!alive) return;
+      const dt = clamp((now - last) / 1000, 0.001, 0.05);
+      last = now;
+      const goal = clamp(target, lo, hi);
+      [pos, vel] = smoothDamp(pos, goal, vel, reduced ? SMOOTH_TIME * 1.8 : SMOOTH_TIME, MAX_SPEED, dt);
 
-
-      const dt =
-        clamp(
-          (now - lastTime) /
-            1000,
-          0.001,
-          0.05
-        );
-
-
-      lastTime = now;
-
-
-      /*
-       * Smoothly move current position
-       * toward the cursor target.
-       */
-      [
-        position,
-        velocity,
-      ] =
-        smoothDamp(
-          position,
-          target,
-          velocity,
-
-          reduced
-            ? SMOOTH_TIME * 1.5
-            : SMOOTH_TIME,
-
-          MAX_SPEED,
-
-          dt
-        );
-
-
-      /*
-       * Render fractional frame.
-       */
-      draw(position);
-
-
-      raf =
-        requestAnimationFrame(
-          tick
-        );
+      if (dirty || Math.abs(pos - drawn) > 0.001) {
+        draw(pos);
+        drawn = pos;
+        dirty = false;
+      }
+      raf = requestAnimationFrame(tick);
     };
 
+    const start = () => {
+      if (started || !alive) return;
+      started = true;
+      draw(pos);
+      drawn = pos;
+      setLive(true); // fade poster -> canvas (same frame, no visible jump)
+      last = performance.now();
+      raf = requestAnimationFrame(tick);
+    };
 
-    /* -------------------------------------------------------------- */
-    /* LOAD PORTRAIT FRAMES                                            */
-    /* -------------------------------------------------------------- */
-
-    const loadFrames =
-      async () => {
-        let loaded = 0;
-
-        let nextIndex = 0;
-
-
-        /*
-         * Load 8 files at a time.
-         *
-         * This prevents the browser from opening
-         * hundreds of requests simultaneously.
-         */
-        const worker =
-          async () => {
-            while (
-              alive &&
-              nextIndex <
-                FRAME_COUNT
-            ) {
-              const index =
-                nextIndex++;
-
-
-              try {
-                /*
-                 * Example:
-                 *
-                 * /portrait/001.webp
-                 * /portrait/002.webp
-                 * ...
-                 */
-                const response =
-                  await fetch(
-                    frameUrl(
-                      index
-                    ),
-                    {
-                      cache:
-                        "force-cache",
-                    }
-                  );
-
-
-                if (
-                  !response.ok
-                ) {
-                  throw new Error(
-                    `HTTP ${response.status}`
-                  );
-                }
-
-
-                const blob =
-                  await response.blob();
-
-
-                /*
-                 * Decode the WebP image
-                 * before using it.
-                 */
-                frames[index] =
-                  await createImageBitmap(
-                    blob
-                  );
-
-              } catch (error) {
-                console.error(
-                  `Portrait frame failed: ${
-                    index + 1
-                  }.webp`,
-                  error
-                );
-              }
-
-
-              loaded++;
-
-
-              onProgress?.(
-                loaded /
-                  FRAME_COUNT
-              );
+    // stream + decode frames centre-out with a few parallel requests
+    (async () => {
+      const order = Array.from({ length: TOTAL_FRAMES }, (_, i) => i);
+      order.sort((x, y) => Math.abs(x - center) - Math.abs(y - center));
+      const c = order[0];
+      let next = 0;
+      let got = 0;
+      const worker = async () => {
+        while (alive && next < order.length) {
+          const i = order[next++];
+          try {
+            const res = await fetch(frameUrl(i));
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const bm = await createImageBitmap(await res.blob(), decodeOpts);
+            if (!alive) {
+              bm.close();
+              return;
             }
-          };
-
-
-        /*
-         * Eight parallel workers.
-         */
-        await Promise.all(
-          Array.from(
-            {
-              length: 8,
-            },
-            worker
-          )
-        );
-
-
-        if (!alive) return;
-
-
-        /*
-         * Show the center portrait first.
-         */
-        draw(center);
-
-
-        /*
-         * Tell Hero that all frames
-         * have finished loading.
-         */
-        onReady?.();
-
-
-        lastTime =
-          performance.now();
-
-
-        raf =
-          requestAnimationFrame(
-            tick
-          );
+            bitmaps[i] = bm;
+            grow();
+            dirty = true;
+            got++;
+            if (!started && bitmaps[c] && got >= 8) start();
+          } catch (err) {
+            console.error("Frame failed:", i, err);
+          }
+        }
       };
-
-
-    loadFrames();
-
-
-    /* -------------------------------------------------------------- */
-    /* CLEANUP                                                         */
-    /* -------------------------------------------------------------- */
+      await Promise.all(Array.from({ length: 6 }, worker));
+      if (alive && !started && got > 0) start();
+    })();
 
     return () => {
       alive = false;
-
-
-      cancelAnimationFrame(
-        raf
-      );
-
-
-      window.removeEventListener(
-        "pointermove",
-        onMove
-      );
-
-
-      window.removeEventListener(
-        "pointerdown",
-        onMove
-      );
-
-
-      document.documentElement.removeEventListener(
-        "mouseleave",
-        toCenter
-      );
-
-
-      window.removeEventListener(
-        "blur",
-        toCenter
-      );
-
-
-      /*
-       * Release decoded image memory.
-       */
-      frames.forEach(
-        (frame) => {
-          frame?.close?.();
-        }
-      );
+      cancelAnimationFrame(raf);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerdown", onMove);
+      document.documentElement.removeEventListener("mouseleave", toCenter);
+      window.removeEventListener("blur", toCenter);
+      bitmaps.forEach((b) => b?.close?.());
     };
-
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-
   return (
-    <canvas
-      ref={canvasRef}
-      className="vr-canvas"
-      width={720}
-      height={576}
-      role="img"
-      aria-label={`Portrait of ${PROFILE.name} turning to follow your cursor`}
-    />
+    <div className={`vr-media ${live ? "is-live" : ""}`}>
+      <img
+        className="vr-poster"
+        src={POSTER_SRC}
+        width={1920}
+        height={1080}
+        alt={`Portrait of ${PROFILE.name}, turning to follow your cursor`}
+        fetchpriority="high"
+        decoding="async"
+      />
+      <canvas ref={canvasRef} className="vr-canvas" width={FRAME_W} height={FRAME_H} aria-hidden="true" />
+    </div>
   );
 }
 
-
 /* ------------------------------------------------------------------ */
-/*  CUSTOM CURSOR                                                      */
+/*  Cursor effect: dot + trailing ring, grid + glow that follow it      */
 /* ------------------------------------------------------------------ */
-
-function CursorFX({
-  rootRef,
-}) {
-  const dotRef =
-    useRef(null);
-
-  const ringRef =
-    useRef(null);
-
+function CursorFX({ rootRef }) {
+  const dotRef = useRef(null);
+  const ringRef = useRef(null);
 
   useEffect(() => {
-    const root =
-      rootRef.current;
+    const root = rootRef.current;
+    const fine = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+    if (!root || !fine) return;
 
+    root.classList.add("has-cursor");
+    const dot = dotRef.current;
+    const ring = ringRef.current;
+    const reduced = prefersReducedMotion();
+    const lit = root.querySelector(".vr-lit");
+    const litGrid = root.querySelector(".vr-lit__grid");
+    const glow = root.querySelector(".vr-glow");
+    const shapes = [...root.querySelectorAll(".vr-shape")].map((el) => ({ el, depth: +el.dataset.depth }));
 
-    const fine =
-      window.matchMedia(
-        "(hover: hover) and (pointer: fine)"
-      ).matches;
+    let mx = window.innerWidth / 2, my = window.innerHeight / 2; // pointer
+    let rx = mx, ry = my; // ring (trails the pointer)
+    let sx = mx, sy = my; // spotlight (trails even more)
+    let hover = false, down = false, raf = 0;
+    let shownHover = null, shownDown = null;
 
-
-    if (!root || !fine) {
-      return;
-    }
-
-
-    root.classList.add(
-      "has-cursor"
-    );
-
-
-    const dot =
-      dotRef.current;
-
-
-    const ring =
-      ringRef.current;
-
-
-    const ringEl =
-      ring.firstChild;
-
-
-    const dotEl =
-      dot.firstChild;
-
-
-    const reduced =
-      prefersReducedMotion();
-
-
-    let mx =
-      window.innerWidth / 2;
-
-    let my =
-      window.innerHeight / 2;
-
-
-    let rx = mx;
-    let ry = my;
-
-
-    let sx = mx;
-    let sy = my;
-
-
-    let hover = false;
-    let down = false;
-
-    let raf = 0;
-
+    // cache the hero's box instead of measuring it every frame
+    let box = root.getBoundingClientRect();
+    const measure = () => {
+      box = root.getBoundingClientRect();
+      litGrid.style.width = `${box.width}px`;
+      litGrid.style.height = `${box.height}px`;
+    };
+    measure();
 
     const onMove = (e) => {
       mx = e.clientX;
-
       my = e.clientY;
-
-
-      root.classList.add(
-        "cur-on"
-      );
-
-
-      const target =
-        e.target;
-
-
-      hover =
-        !!(
-          target &&
-          target.closest &&
-          target.closest(
-            "a, button, [data-cursor]"
-          )
-        );
+      root.classList.add("cur-on");
+      const t = e.target;
+      hover = !!(t && t.closest && t.closest("a, button, [data-cursor]"));
     };
-
-
-    const onDown = () => {
-      down = true;
-    };
-
-
-    const onUp = () => {
-      down = false;
-    };
-
-
-    const onLeave = () => {
-      root.classList.remove(
-        "cur-on"
-      );
-    };
-
+    const onDown = () => (down = true);
+    const onUp = () => (down = false);
+    const onLeave = () => root.classList.remove("cur-on");
 
     const loop = () => {
-      /*
-       * Ring follows cursor.
-       */
-      rx +=
-        (mx - rx) *
-        (reduced
-          ? 1
-          : 0.18);
-
-
-      ry +=
-        (my - ry) *
-        (reduced
-          ? 1
-          : 0.18);
-
-
-      /*
-       * Spotlight follows more slowly.
-       */
-      sx +=
-        (mx - sx) *
-        (reduced
-          ? 1
-          : 0.07);
-
-
-      sy +=
-        (my - sy) *
-        (reduced
-          ? 1
-          : 0.07);
-
-
-      dot.style.transform =
-        `translate3d(${mx}px, ${my}px, 0)`;
-
-
-      ring.style.transform =
-        `translate3d(${rx}px, ${ry}px, 0)`;
-
-
-      const r =
-        root.getBoundingClientRect();
-
-
-      root.style.setProperty(
-        "--mx",
-        `${sx - r.left}px`
-      );
-
-
-      root.style.setProperty(
-        "--my",
-        `${sy - r.top}px`
-      );
-
-
-      ringEl.classList.toggle(
-        "is-hover",
-        hover
-      );
-
-
-      ringEl.classList.toggle(
-        "is-down",
-        down
-      );
-
-
-      dotEl.classList.toggle(
-        "is-hover",
-        hover
-      );
-
-
-      raf =
-        requestAnimationFrame(
-          loop
-        );
+      rx += (mx - rx) * (reduced ? 1 : 0.18);
+      ry += (my - ry) * (reduced ? 1 : 0.18);
+      sx += (mx - sx) * (reduced ? 1 : 0.07);
+      sy += (my - sy) * (reduced ? 1 : 0.07);
+      dot.style.transform = `translate3d(${mx}px, ${my}px, 0)`;
+      ring.style.transform = `translate3d(${rx}px, ${ry}px, 0)`;
+      // spotlight + lit grid: transform-only, handled by the compositor
+      const lx = sx - box.left - 230, ly = sy - box.top - 230;
+      lit.style.transform = `translate3d(${lx}px, ${ly}px, 0)`;
+      litGrid.style.transform = `translate3d(${-lx}px, ${-ly}px, 0)`;
+      glow.style.transform = `translate3d(${sx - box.left - 380}px, ${sy - box.top - 380}px, 0)`;
+      // shapes drift away from the cursor, nearer ones (higher depth) more
+      if (!reduced) {
+        const px = sx / window.innerWidth - 0.5, py = sy / window.innerHeight - 0.5;
+        for (const s of shapes) s.el.style.transform = `translate3d(${-px * s.depth}px, ${-py * s.depth}px, 0)`;
+      }
+      if (hover !== shownHover || down !== shownDown) {
+        ring.firstChild.classList.toggle("is-hover", hover);
+        ring.firstChild.classList.toggle("is-down", down);
+        dot.firstChild.classList.toggle("is-hover", hover);
+        shownHover = hover;
+        shownDown = down;
+      }
+      raf = requestAnimationFrame(loop);
     };
 
-
-    window.addEventListener(
-      "pointermove",
-      onMove,
-      {
-        passive: true,
-      }
-    );
-
-
-    window.addEventListener(
-      "pointerdown",
-      onDown
-    );
-
-
-    window.addEventListener(
-      "pointerup",
-      onUp
-    );
-
-
-    document.documentElement.addEventListener(
-      "mouseleave",
-      onLeave
-    );
-
-
-    raf =
-      requestAnimationFrame(
-        loop
-      );
-
+    window.addEventListener("pointermove", onMove, { passive: true });
+    window.addEventListener("pointerdown", onDown);
+    window.addEventListener("pointerup", onUp);
+    document.documentElement.addEventListener("mouseleave", onLeave);
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, { passive: true });
+    raf = requestAnimationFrame(loop);
 
     return () => {
-      cancelAnimationFrame(
-        raf
-      );
-
-
-      window.removeEventListener(
-        "pointermove",
-        onMove
-      );
-
-
-      window.removeEventListener(
-        "pointerdown",
-        onDown
-      );
-
-
-      window.removeEventListener(
-        "pointerup",
-        onUp
-      );
-
-
-      document.documentElement.removeEventListener(
-        "mouseleave",
-        onLeave
-      );
-
-
-      root.classList.remove(
-        "has-cursor",
-        "cur-on"
-      );
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("pointerup", onUp);
+      document.documentElement.removeEventListener("mouseleave", onLeave);
+      root.classList.remove("has-cursor", "cur-on");
     };
   }, [rootRef]);
 
-
   return (
     <>
-      <div
-        className="vr-cur"
-        ref={ringRef}
-        aria-hidden="true"
-      >
-        <div className="vr-cur__ring">
-          <i />
-        </div>
+      <div className="vr-cur" ref={ringRef} aria-hidden="true">
+        <div className="vr-cur__ring"><i /></div>
       </div>
-
-
-      <div
-        className="vr-cur"
-        ref={dotRef}
-        aria-hidden="true"
-      >
+      <div className="vr-cur" ref={dotRef} aria-hidden="true">
         <div className="vr-cur__dot" />
       </div>
     </>
   );
 }
 
-
-/* ------------------------------------------------------------------ */
-/*  MAGNETIC BUTTONS                                                   */
-/* ------------------------------------------------------------------ */
-
+/* Buttons gently lean toward the cursor */
 function useMagnetic() {
-  const ref =
-    useRef(null);
-
-
-  const onPointerMove =
-    useCallback(
-      (e) => {
-        if (
-          prefersReducedMotion() ||
-          e.pointerType === "touch"
-        ) {
-          return;
-        }
-
-
-        const el =
-          ref.current;
-
-
-        if (!el) return;
-
-
-        const r =
-          el.getBoundingClientRect();
-
-
-        const dx =
-          (
-            e.clientX -
-            (
-              r.left +
-              r.width / 2
-            )
-          ) * 0.22;
-
-
-        const dy =
-          (
-            e.clientY -
-            (
-              r.top +
-              r.height / 2
-            )
-          ) * 0.32;
-
-
-        el.style.transform =
-          `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px)`;
-      },
-      []
-    );
-
-
-  const onPointerLeave =
-    useCallback(() => {
-      if (ref.current) {
-        ref.current.style.transform =
-          "";
-      }
-    }, []);
-
-
-  return {
-    ref,
-    onPointerMove,
-    onPointerLeave,
-  };
+  const ref = useRef(null);
+  const onPointerMove = useCallback((e) => {
+    if (prefersReducedMotion() || e.pointerType === "touch") return;
+    const el = ref.current;
+    const r = el.getBoundingClientRect();
+    const dx = (e.clientX - (r.left + r.width / 2)) * 0.22;
+    const dy = (e.clientY - (r.top + r.height / 2)) * 0.32;
+    el.style.transform = `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px)`;
+  }, []);
+  const onPointerLeave = useCallback(() => {
+    if (ref.current) ref.current.style.transform = "";
+  }, []);
+  return { ref, onPointerMove, onPointerLeave };
 }
 
-
 /* ------------------------------------------------------------------ */
-/*  TERMINAL                                                           */
+/*  Quick facts card (from data/content)                                */
 /* ------------------------------------------------------------------ */
-
-function Terminal({
-  run,
-}) {
-  const [chars, setChars] =
-    useState(0);
-
-
-  const total =
-    TERMINAL_LINES.reduce(
-      (n, line) =>
-        n + line.length,
-      0
-    );
-
-
-  useEffect(() => {
-    if (!run) return;
-
-
-    if (
-      prefersReducedMotion()
-    ) {
-      setChars(total);
-
-      return;
-    }
-
-
-    const id =
-      setInterval(() => {
-        setChars((current) => {
-          if (
-            current >= total
-          ) {
-            clearInterval(id);
-
-            return current;
-          }
-
-
-          return current + 1;
-        });
-      }, 32);
-
-
-    return () =>
-      clearInterval(id);
-  }, [
-    run,
-    total,
-  ]);
-
-
-  let remaining =
-    chars;
-
-
+function QuickFacts() {
   return (
-    <div
-      className="vr-terminal"
-      aria-label="System status"
-    >
-      <ul>
-        {TERMINAL_LINES.map(
-          (line, i) => {
-            const shown =
-              clamp(
-                remaining,
-                0,
-                line.length
-              );
-
-
-            remaining -=
-              line.length;
-
-
-            const typing =
-              shown > 0 &&
-              shown <
-                line.length;
-
-
-            const done =
-              shown ===
-              line.length;
-
-
-            return (
-              <li
-                key={line}
-                className={
-                  done
-                    ? "is-done"
-                    : ""
-                }
-              >
-                <span className="vr-terminal__mark" />
-
-                <span>
-                  {line.slice(
-                    0,
-                    shown
-                  )}
-                </span>
-
-
-                {typing && (
-                  <i className="vr-caret" />
-                )}
-
-
-                {done &&
-                  i ===
-                    TERMINAL_LINES.length -
-                      1 && (
-                    <i className="vr-caret vr-caret--blink" />
-                  )}
-              </li>
-            );
-          }
-        )}
-      </ul>
-    </div>
+    <dl className="vr-facts">
+      {/* status is already shown in the footer */}
+      {quickFacts
+        .filter((f) => !f.isStatus)
+        .map((f) => (
+          <div className="vr-facts__row" key={f.label}>
+            <dt>{f.label}</dt>
+            <dd>{f.value}</dd>
+          </div>
+        ))}
+    </dl>
   );
 }
 
-
 /* ------------------------------------------------------------------ */
-/*  CORE SIGNAL                                                        */
+/*  Hero                                                                */
 /* ------------------------------------------------------------------ */
+export default function Hero({ onEnterPortfolio, onViewProjects }) {
+  const rootRef = useRef(null);
+  const [ready, setReady] = useState(false);
+  const magA = useMagnetic();
+  const magB = useMagnetic();
 
-function CoreSignal({
-  run,
-}) {
-  const [v, setV] =
-    useState(0);
-
-
+  // Content is shown immediately – nothing waits for the video.
   useEffect(() => {
-    if (!run) return;
+    const id = requestAnimationFrame(() => setReady(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
 
-
-    if (
-      prefersReducedMotion()
-    ) {
-      setV(97.6);
-
-      return;
-    }
-
-
-    let raf;
-
-
-    const start =
-      performance.now();
-
-
-    const step = (
-      now
-    ) => {
-      const t =
-        clamp(
-          (now - start) /
-            1800,
-          0,
-          1
-        );
-
-
-      setV(
-        97.6 *
-          (
-            1 -
-            Math.pow(
-              1 - t,
-              3
-            )
-          )
-      );
-
-
-      if (t < 1) {
-        raf =
-          requestAnimationFrame(
-            step
-          );
-      }
-    };
-
-
-    raf =
-      requestAnimationFrame(
-        step
-      );
-
-
-    return () =>
-      cancelAnimationFrame(
-        raf
-      );
-  }, [run]);
-
+  const goTo = useCallback((id, cb) => {
+    if (cb) return cb();
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: "smooth" });
+    else window.scrollTo({ top: window.innerHeight, behavior: "smooth" });
+  }, []);
 
   return (
-    <div
-      className="vr-hud vr-hud--signal"
-    >
-      <span className="vr-hud__label">
-        CORE SIGNAL
-      </span>
+    <main ref={rootRef} className={`vr-home ${ready ? "is-ready" : ""}`}>
+      <style>{CSS}</style>
 
-      <strong className="vr-hud__value">
-        {v.toFixed(1)}%
-      </strong>
-
-      <div className="vr-hud__meter">
-        <i
-          style={{
-            transform:
-              `scaleX(${v / 100})`,
-          }}
-        />
+      <div className="vr-grid" aria-hidden="true" />
+      <div className="vr-lit" aria-hidden="true">
+        <div className="vr-lit__grid" />
       </div>
-    </div>
-  );
-}
+      <div className="vr-glow" aria-hidden="true" />
 
-
-/* ------------------------------------------------------------------ */
-/*  HERO                                                               */
-/* ------------------------------------------------------------------ */
-
-export default function Hero({
-  onEnterPortfolio,
-  onViewProjects,
-}) {
-  const rootRef =
-    useRef(null);
-
-
-  const [progress, setProgress] =
-    useState(0);
-
-
-  const [ready, setReady] =
-    useState(false);
-
-
-  const magA =
-    useMagnetic();
-
-
-  const magB =
-    useMagnetic();
-
-
-  const goTo =
-    useCallback(
-      (id, cb) => {
-        if (cb) {
-          return cb();
-        }
-
-
-        const el =
-          document.getElementById(
-            id
-          );
-
-
-        if (el) {
-          el.scrollIntoView({
-            behavior: "smooth",
-          });
-        } else {
-          window.scrollTo({
-            top:
-              window.innerHeight,
-
-            behavior:
-              "smooth",
-          });
-        }
-      },
-      []
-    );
-
-
-  return (
-    <main
-      ref={rootRef}
-      className={
-        `vr-home ${
-          ready
-            ? "is-ready"
-            : ""
-        }`
-      }
-    >
-      <style>
-        {CSS}
-      </style>
-
-
-      {/* Background */}
-      <div
-        className="vr-grid"
-        aria-hidden="true"
-      />
-
-
-      <div
-        className="vr-grid vr-grid--lit"
-        aria-hidden="true"
-      />
-
-
-      <div
-        className="vr-glow"
-        aria-hidden="true"
-      />
-
-
-      {/* Top navigation */}
       <header className="vr-top">
         <div className="vr-mark">
-          <i aria-hidden="true">
-            {PROFILE.name[0]}
-          </i>
-
-          <span>
-            {PROFILE.name}
-          </span>
+          <i aria-hidden="true">{PROFILE.name[0]}</i>
+          <span>{PROFILE.name}</span>
         </div>
-
-
         <nav aria-label="Primary">
-          {PROFILE.nav.map(
-            (n) => (
-              <a
-                key={n.label}
-                href={n.href}
-              >
-                {n.label}
-              </a>
-            )
-          )}
+          {PROFILE.nav.map((n) => (
+            <a key={n.label} href={n.href}>{n.label}</a>
+          ))}
         </nav>
       </header>
 
-
-      {/* Portrait */}
       <section className="vr-stage">
         <div className="vr-portrait">
-          <LivingPortrait
-            onProgress={
-              setProgress
-            }
-            onReady={() =>
-              setReady(true)
-            }
-          />
+          <LivingPortrait />
         </div>
-
-
-        {/* Subject ID */}
-        <div
-          className="vr-hud vr-hud--id"
-        >
-          <span className="vr-hud__label">
-            SUBJECT ID
-          </span>
-
-          <strong className="vr-hud__value">
-            VRB//026
-          </strong>
-        </div>
-
-
-        <CoreSignal
-          run={ready}
-        />
       </section>
 
+      <FloatingShapes />
 
-      {/* Main copy */}
       <section className="vr-copy">
-        <p className="vr-role">
-          {PROFILE.role}
-        </p>
-
-
-        <h1 className="vr-name">
-          {PROFILE.name}
-        </h1>
-
-
+        <p className="vr-role">{PROFILE.role}</p>
+        <h1 className="vr-name">{PROFILE.name}</h1>
         <h2 className="vr-subline">
-          <span>
-            BUILDING
-          </span>
-
-          <span>
-            THE FUTURE
-          </span>
+          {PROFILE.headline.map((line) => (
+            <span key={line}>{line}</span>
+          ))}
         </h2>
-
-
-        <p className="vr-intro">
-          Designing intelligent systems
-          where artificial intelligence,
-          software and human imagination
-          converge.
-        </p>
-
-
+        <p className="vr-intro">{PROFILE.intro}</p>
         <div className="vr-actions">
           <button
             type="button"
             className="vr-btn vr-btn--primary"
-            onClick={() =>
-              goTo(
-                "work",
-                onEnterPortfolio
-              )
-            }
+            onClick={() => goTo("work", onViewProjects)}
             {...magA}
           >
-            ENTER PORTFOLIO
-
-            <span aria-hidden="true">
-              →
-            </span>
+            VIEW MY WORK <span aria-hidden="true">→</span>
           </button>
-
-
           <button
             type="button"
             className="vr-btn vr-btn--ghost"
-            onClick={() =>
-              goTo(
-                "projects",
-                onViewProjects
-              )
-            }
+            onClick={() => goTo("contact", onEnterPortfolio)}
             {...magB}
           >
-            VIEW PROJECTS
+            GET IN TOUCH
           </button>
         </div>
       </section>
 
+      <QuickFacts />
 
-      {/* Terminal */}
-      <Terminal
-        run={ready}
-      />
-
-
-      {/* Footer */}
       <footer className="vr-foot">
         <div className="vr-status">
-          <span
-            className="vr-pulse"
-            aria-hidden="true"
-          />
-
+          <span className="vr-pulse" aria-hidden="true" />
           {PROFILE.availability}
         </div>
-
-
-        <button
-          type="button"
-          className="vr-scroll"
-          onClick={() =>
-            goTo(
-              "work",
-              onEnterPortfolio
-            )
-          }
-        >
-          <span>
-            SCROLL TO DECODE
-          </span>
-
+        <button type="button" className="vr-scroll" onClick={() => goTo("work", onEnterPortfolio)}>
+          <span>SCROLL</span>
           <i aria-hidden="true" />
         </button>
-
-
-        <nav
-          className="vr-social"
-          aria-label="Social"
-        >
-          {PROFILE.social.map(
-            (s) => (
-              <a
-                key={s.label}
-                href={s.href}
-                target="_blank"
-                rel="noreferrer noopener"
-              >
-                {s.label}
-              </a>
-            )
-          )}
+        <nav className="vr-social" aria-label="Social">
+          {PROFILE.social.map((s) => (
+            <a key={s.label} href={s.href} target="_blank" rel="noreferrer noopener">{s.label}</a>
+          ))}
         </nav>
       </footer>
 
-
-      {/* Loading screen */}
-      <div
-        className="vr-loader"
-        role="status"
-        aria-live="polite"
-      >
-        <div>
-          CALIBRATING GAZE
-
-          <div className="vr-loader__line">
-            <i
-              style={{
-                transform:
-                  `scaleX(${progress})`,
-              }}
-            />
-          </div>
-        </div>
-      </div>
-
-
-      {/* Custom cursor */}
-      <CursorFX
-        rootRef={rootRef}
-      />
+      <CursorFX rootRef={rootRef} />
     </main>
   );
 }
