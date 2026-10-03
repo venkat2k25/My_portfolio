@@ -1,0 +1,176 @@
+/* ================================================================
+   Scenes — full-screen layers; each hands off to the next.
+   ================================================================ */
+.scene { position: relative; z-index: var(--z, 1); }
+.scene__frame {
+  position: relative;
+  overflow: clip; /* clip, not hidden: keeps position: sticky working inside */
+  background: var(--scene-bg, var(--bg));
+}
+.scene__inner { position: relative; } /* no will-change: it would trap Hero's fixed cursor */
+.scene__body {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* Tones alternate white / grey. Grey scenes lift their cards to
+   white by re-pointing the surface tokens. */
+.scene--white { --scene-bg: var(--bg); }
+.scene--grey {
+  --scene-bg: #eef0f2;
+  --surface: #ffffff;
+  --surface-2: #f8f9fa;
+  --border: #dcdfe3;
+}
+.scene--hero { --scene-bg: #f1f1f1; }
+
+/* Shape layer: one viewport tall and sticky, so the solids stay with the
+   reader through long scenes; takes no space in the flow. */
+.scene__shapes {
+  position: sticky;
+  top: 0;
+  z-index: 0;
+  height: 100vh;
+  margin-bottom: -100vh;
+  pointer-events: none;
+}
+
+/* ================================================================
+   Solids — shaded CSS faces; light falls from the top left.
+   ================================================================ */
+.solid {
+  --c-top: #ffffff;
+  --c-front: #eceef1;
+  --c-left: #dde0e4;
+  --c-right: #c6cbd1;
+  --c-back: #d3d7dc;
+  --c-bottom: #aab0b7;
+  --edge: rgba(13, 15, 18, 0.07);
+  --glow: none;
+  position: absolute;
+  width: var(--box);
+  height: var(--box);
+  will-change: transform, opacity;
+}
+.solid--neon {
+  --c-top: #9bffb3;
+  --c-front: #00ff41;
+  --c-left: #00e63b;
+  --c-right: #00b82f;
+  --c-back: #00cc34;
+  --c-bottom: #008a23;
+  --edge: rgba(0, 90, 20, 0.25);
+  --glow: 0 0 28px var(--neon-glow);
+}
+.solid--ink {
+  --c-top: #4a4f56;
+  --c-front: #2a2e33;
+  --c-left: #1f2226;
+  --c-right: #15171a;
+  --c-back: #1a1d21;
+  --c-bottom: #0d0f12;
+  --edge: rgba(255, 255, 255, 0.08);
+}
+
+.solid__drift, .solid__bob { position: absolute; inset: 0; }
+.solid__bob { perspective: 1000px; animation: solid-bob 7s ease-in-out infinite alternate; }
+.solid:nth-child(2n) .solid__bob { animation-duration: 9s; animation-delay: -3s; }
+@keyframes solid-bob {
+  from { transform: translate3d(0, -10px, 0); }
+  to { transform: translate3d(0, 10px, 0); }
+}
+.solid__stage,
+.solid__spin {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform-style: preserve-3d;
+}
+.solid__spin { transform: rotateX(-22deg) rotateY(32deg); } /* static pose; GSAP takes over when motion is on */
+
+.solid__face {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border: 1px solid var(--edge);
+  box-shadow: var(--glow);
+  background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0) 55%);
+}
+
+/* Box */
+.solid--box .solid__face--front,
+.solid--box .solid__face--back { width: var(--w); height: var(--h); margin: calc(var(--h) / -2) 0 0 calc(var(--w) / -2); }
+.solid--box .solid__face--right,
+.solid--box .solid__face--left { width: var(--d); height: var(--h); margin: calc(var(--h) / -2) 0 0 calc(var(--d) / -2); }
+.solid--box .solid__face--top,
+.solid--box .solid__face--bottom { width: var(--w); height: var(--d); margin: calc(var(--d) / -2) 0 0 calc(var(--w) / -2); }
+.solid--box .solid__face--front  { background-color: var(--c-front);  transform: translateZ(calc(var(--d) / 2)); }
+.solid--box .solid__face--back   { background-color: var(--c-back);   transform: rotateY(180deg) translateZ(calc(var(--d) / 2)); }
+.solid--box .solid__face--right  { background-color: var(--c-right);  transform: rotateY(90deg) translateZ(calc(var(--w) / 2)); }
+.solid--box .solid__face--left   { background-color: var(--c-left);   transform: rotateY(-90deg) translateZ(calc(var(--w) / 2)); }
+.solid--box .solid__face--top    { background-color: var(--c-top);    transform: rotateX(90deg) translateZ(calc(var(--h) / 2)); }
+.solid--box .solid__face--bottom { background-color: var(--c-bottom); transform: rotateX(-90deg) translateZ(calc(var(--h) / 2)); }
+
+/* Pyramid: base at +height/2, apex at -height/2, sides hinge on the base edges. */
+.solid--pyramid .solid__face { border: 0; }
+.solid--pyramid .solid__face--base {
+  width: var(--s);
+  height: var(--s);
+  margin: calc(var(--s) / -2) 0 0 calc(var(--s) / -2);
+  background-color: var(--c-bottom);
+  transform: translateY(calc(var(--ph) / 2)) rotateX(90deg);
+}
+.solid--pyramid .solid__face:not(.solid__face--base) {
+  width: var(--s);
+  height: var(--l);
+  margin: calc(var(--ph) / 2 - var(--l)) 0 0 calc(var(--s) / -2);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  transform-origin: 50% 100%;
+  transform: rotateY(calc(var(--k) * 90deg)) translateZ(calc(var(--s) / 2)) rotateX(31.76deg);
+}
+.solid--pyramid .solid__face--front { background-color: var(--c-front); }
+.solid--pyramid .solid__face--right { background-color: var(--c-right); }
+.solid--pyramid .solid__face--back  { background-color: var(--c-back); }
+.solid--pyramid .solid__face--left  { background-color: var(--c-left); }
+
+/* Sphere: a shaded ball plus a tilted orbit ring that passes behind it. */
+.solid__ball {
+  position: absolute;
+  width: var(--s);
+  height: var(--s);
+  margin: calc(var(--s) / -2) 0 0 calc(var(--s) / -2);
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 30%, #ffffff 0 6%, var(--c-front) 32%, var(--c-right) 72%, var(--c-bottom) 100%);
+  box-shadow: var(--glow);
+}
+.solid__ring {
+  position: absolute;
+  width: calc(var(--s) * 1.7);
+  height: calc(var(--s) * 1.7);
+  margin: calc(var(--s) * -0.85) 0 0 calc(var(--s) * -0.85);
+  border-radius: 50%;
+  border: 2px solid var(--neon);
+  box-shadow: 0 0 14px var(--neon-glow);
+  transform: rotateX(74deg);
+}
+.solid--neon .solid__ring { border-color: var(--ink); box-shadow: none; }
+
+/* ---------- Smaller screens: smaller, fewer shapes ---------- */
+@media (max-width: 1023px) {
+  .solid { scale: 0.7; }
+}
+@media (max-width: 639px) {
+  .solid { scale: 0.5; opacity: 0.85; }
+  .solid--hide-sm { display: none; }
+  .scene__body { min-height: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .solid__bob { animation: none; }
+}

@@ -2,20 +2,26 @@
 @import 'tailwindcss';
 
 /* ---------------------------------------------------------------
-   Tokens — a deliberately narrow, monochrome palette on a dark
-   charcoal ground. Hierarchy comes from value (light/dark) and
-   type weight, not color or glow.
+   Tokens — white ground, grey structure, one neon accent.
+   Neon is for light (glows, lines, dots, fills behind dark text);
+   it is too bright to be read as text on white, so --neon-ink is
+   the accent colour whenever the accent has to be legible.
 ------------------------------------------------------------------ */
 :root {
-  --bg: #0a0b0d;
-  --surface: #131518;
-  --surface-2: #1b1e22;
-  --border: #24272c;
-  --border-strong: #3a3e44;
-  --text: #f2f3f4;
-  --text-muted: #9a9ea3;
-  --text-faint: #63676c;
+  --bg: #ffffff;
+  --surface: #f5f6f7;
+  --surface-2: #eceef0;
+  --border: #e2e4e7;
+  --border-strong: #c3c7cc;
+  --text: #0d0f12;
+  --text-muted: #565b62;
+  --text-faint: #767b82;
+  --ink: #0d0f12;
   --white: #ffffff;
+  --neon: #00ff41;
+  --neon-ink: #008a23;
+  --neon-glow: rgba(0, 255, 65, 0.35);
+  --accent: var(--neon);
   --radius: 6px;
   --container: 1180px;
   font-family: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
@@ -26,14 +32,15 @@
 
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; scroll-padding-top: 88px; }
+html.lenis { scroll-behavior: auto; }
 body { margin: 0; background: var(--bg); overflow-x: hidden; }
 img { max-width: 100%; display: block; }
 a { color: inherit; text-decoration: none; }
 button { font-family: inherit; }
-::selection { background: var(--white); color: var(--bg); }
+::selection { background: var(--neon); color: var(--ink); }
 
 :focus-visible {
-  outline: 2px solid var(--white);
+  outline: 2px solid var(--neon-ink);
   outline-offset: 3px;
 }
 
@@ -105,13 +112,13 @@ button { font-family: inherit; }
   padding: 13px 22px;
   border-radius: var(--radius);
   border: 1px solid transparent;
-  transition: opacity 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
 }
 .btn svg { width: 15px; height: 15px; }
-.btn--primary { background: var(--white); color: #0a0b0d; }
-.btn--primary:hover { opacity: 0.85; }
+.btn--primary { background: var(--ink); color: var(--white); }
+.btn--primary:hover { background: var(--neon); color: var(--ink); box-shadow: 0 0 24px var(--neon-glow); }
 .btn--secondary { background: transparent; color: var(--text); border-color: var(--border-strong); }
-.btn--secondary:hover { border-color: var(--white); }
+.btn--secondary:hover { border-color: var(--ink); }
 
 .text-link {
   display: inline-flex;
@@ -123,7 +130,7 @@ button { font-family: inherit; }
   padding-bottom: 2px;
   transition: border-color 0.15s ease;
 }
-.text-link:hover { border-color: var(--white); }
+.text-link:hover { border-color: var(--neon); box-shadow: 0 2px 0 -1px var(--neon); }
 .text-link svg { width: 13px; height: 13px; }
 
 /* ---------------------------------------------------------------
@@ -136,10 +143,10 @@ button { font-family: inherit; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  max-width: var(--container);
-  margin: 0 auto;
-  padding: 22px 32px;
-  background: rgba(10, 11, 13, 0.82);
+  /* full-bleed bar, content aligned to the page container */
+  padding: 22px max(32px, calc((100% - var(--container)) / 2 + 32px));
+  background: rgba(255, 255, 255, 0.82);
+  border-bottom: 1px solid var(--border);
   backdrop-filter: blur(8px);
 }
 .brand { font-weight: 600; font-size: 15px; letter-spacing: -0.01em; }
@@ -157,7 +164,8 @@ button { font-family: inherit; }
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--white);
+  background: var(--neon);
+  box-shadow: 0 0 8px var(--neon);
   display: inline-block;
 }
 
@@ -280,7 +288,7 @@ button { font-family: inherit; }
 .facts__row span { color: var(--text-faint); }
 .facts__row b { font-weight: 600; text-align: right; max-width: 60%; }
 .facts__row b.is-status { display: inline-flex; align-items: center; gap: 7px; justify-content: flex-end; }
-.facts__row b.is-status i { width: 6px; height: 6px; border-radius: 50%; background: var(--white); }
+.facts__row b.is-status i { width: 6px; height: 6px; border-radius: 50%; background: var(--neon); box-shadow: 0 0 8px var(--neon); }
 
 /* ---------------------------------------------------------------
    Projects
@@ -295,7 +303,7 @@ button { font-family: inherit; }
   padding: 28px;
   transition: background 0.15s ease;
 }
-.project-card:hover { background: var(--surface-2); }
+.project-card:hover { background: var(--white); box-shadow: inset 2px 0 0 var(--neon); }
 .project-card__num {
   font-family: "IBM Plex Mono", monospace;
   font-size: 13px;
@@ -329,7 +337,10 @@ button { font-family: inherit; }
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 5px 10px;
+  background: var(--white);
+  transition: border-color 0.15s ease, color 0.15s ease;
 }
+.chips span:hover { border-color: var(--neon); color: var(--text); }
 
 /* ---------------------------------------------------------------
    Experience
@@ -347,7 +358,7 @@ button { font-family: inherit; }
 .timeline-row time { font-family: "IBM Plex Mono", monospace; font-size: 13px; color: var(--text-faint); padding-top: 3px; }
 .timeline-row__rail { display: flex; justify-content: center; position: relative; }
 .timeline-row__dot { width: 9px; height: 9px; border-radius: 50%; border: 1px solid var(--border-strong); background: var(--bg); margin-top: 5px; }
-.timeline-row.is-current .timeline-row__dot { background: var(--white); border-color: var(--white); }
+.timeline-row.is-current .timeline-row__dot { background: var(--neon); border-color: var(--neon); box-shadow: 0 0 10px var(--neon); }
 .timeline-row h3 { font-size: 16px; font-weight: 600; margin: 0 0 6px; }
 .timeline-row p { color: var(--text-muted); font-size: 14px; margin: 0; }
 .timeline-row__current-tag {
@@ -355,8 +366,8 @@ button { font-family: inherit; }
   margin-top: 8px;
   font-size: 11px;
   font-weight: 600;
-  color: var(--text);
-  border: 1px solid var(--border-strong);
+  color: var(--neon-ink);
+  border: 1px solid var(--neon);
   border-radius: 4px;
   padding: 3px 8px;
 }
@@ -436,7 +447,7 @@ button { font-family: inherit; }
   .section { padding: 72px 20px; }
   .section-head { margin-bottom: 36px; }
   .section-head--row { flex-direction: column; align-items: flex-start; gap: 14px; }
-  .topbar { padding: 10px 20px; background: rgba(10, 11, 13, 0.94); }
+  .topbar { padding: 10px 20px; background: rgba(255, 255, 255, 0.94); }
   .nav-toggle { display: block; }
   .topbar nav {
     display: none;
@@ -447,7 +458,7 @@ button { font-family: inherit; }
     flex-direction: column;
     gap: 0;
     padding: 4px 20px 16px;
-    background: rgba(10, 11, 13, 0.97);
+    background: rgba(255, 255, 255, 0.97);
     border-bottom: 1px solid var(--border);
   }
   .topbar.is-open nav { display: flex; }

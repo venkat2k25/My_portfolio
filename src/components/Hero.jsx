@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { navLinks, quickFacts, socials } from "../data/content";
+import { quickFacts, socials } from "../data/content";
+import { scrollToId } from "../lib/smoothScroll";
 
 /* ------------------------------------------------------------------ */
 /*  Edit this block – copy and labels (links come from data/content)   */
@@ -9,10 +10,9 @@ const PROFILE = {
   role: "SOFTWARE ENGINEER · AI & FULL-STACK",
   headline: ["Reliable systems,", "intelligent products."],
   intro:
-    "Software Engineer at TCS, validating airline reservation systems for Japan Airlines partners. " +
+    "Software Engineer at TCS. " +
     "Alongside that, I build AI-driven analytics, computer-vision and full-stack applications.",
   availability: "OPEN TO OPPORTUNITIES",
-  nav: navLinks.filter((n) => n.href !== "#skills"),
   social: socials,
 };
 
@@ -21,8 +21,7 @@ const PROFILE = {
 /* ------------------------------------------------------------------ */
 // 60 frames, 1920×1080 WebP, in /public/portrait/001.webp … 060.webp
 const TOTAL_FRAMES = 60;
-// Mobile layout (≤ 820px) uses square 720×720 crops around the head in /portrait/m/ (2.3 MB vs 7.1 MB).
-const MOBILE = typeof window !== "undefined" && window.matchMedia("(max-width: 820px)").matches;
+// Small screens crop the same 16:9 source sequence in the responsive layout.
 const TOUCH = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
 // Phones / tablets (by device, not screen width): the head follows the tilt sensor instead of the cursor.
 const PHONE =
@@ -31,7 +30,7 @@ const PHONE =
     /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
     (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1) || // iPadOS reports as a Mac
     (TOUCH && !window.matchMedia("(hover: hover)").matches));
-const frameUrl = (i) => `/portrait/${MOBILE ? "m/" : ""}${String(i + 1).padStart(3, "0")}.webp`;
+const frameUrl = (i) => `/portrait/${String(i + 1).padStart(3, "0")}.webp`;
 // Touch devices / slow connections decode frames at a smaller size to save memory.
 const LITE =
   typeof window !== "undefined" &&
@@ -39,8 +38,8 @@ const LITE =
     !!navigator.connection?.saveData ||
     ["slow-2g", "2g", "3g"].includes(navigator.connection?.effectiveType));
 // Canvas / decode resolution (same aspect as the source frames)
-const FRAME_W = MOBILE ? 720 : LITE ? 854 : 1280;
-const FRAME_H = MOBILE ? 720 : LITE ? 480 : 720;
+const FRAME_W = LITE ? 854 : 1280;
+const FRAME_H = LITE ? 480 : 720;
 
 const GAIN = 1.5; // >1 = more sensitive: full head turn is reached before the cursor hits the screen edge
 const CURVE = 0.78; // <1 = small cursor movements already turn the head noticeably
@@ -129,7 +128,7 @@ const CSS = `@import url("https://fonts.googleapis.com/css2?family=Instrument+Se
   --mute: rgba(17, 18, 20, 0.58);
   --faint: rgba(17, 18, 20, 0.38);
   --line: rgba(17, 18, 20, 0.14);
-  --accent: #6d35f5;
+  --accent: #00d936; /* neon, a touch deeper so strokes read on the light backdrop */
   --ok: #17a673;
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --display: "Space Grotesk", "Helvetica Neue", Arial, sans-serif;
@@ -170,32 +169,17 @@ const CSS = `@import url("https://fonts.googleapis.com/css2?family=Instrument+Se
 }
 .vr-lit__grid {
   position: absolute; left: 0; top: 0;
-  background-image: linear-gradient(rgba(109, 53, 245, 0.32) 1px, transparent 1px), linear-gradient(90deg, rgba(109, 53, 245, 0.32) 1px, transparent 1px);
+  background-image: linear-gradient(rgba(0, 217, 54, 0.32) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 217, 54, 0.32) 1px, transparent 1px);
   background-size: 88px 88px; background-position: center;
   will-change: transform;
 }
 .vr-glow {
   position: absolute; left: 0; top: 0; width: 760px; height: 760px; pointer-events: none;
-  background: radial-gradient(closest-side, rgba(109, 53, 245, 0.07), transparent 70%);
+  background: radial-gradient(closest-side, rgba(0, 217, 54, 0.07), transparent 70%);
   will-change: transform;
 }
 .vr-lit, .vr-glow { opacity: 0; transition: opacity 0.4s; }
 .cur-on .vr-lit, .cur-on .vr-glow { opacity: 1; }
-
-/* ---------- top bar ---------- */
-.vr-top {
-  position: absolute; z-index: 6; top: 28px; left: var(--pad); right: var(--pad);
-  display: flex; justify-content: space-between; align-items: center;
-  font-size: 11px; letter-spacing: 0.18em;
-}
-.vr-mark { display: flex; align-items: center; gap: 10px; font-family: var(--display); font-weight: 600; letter-spacing: 0.22em; }
-.vr-mark i { width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid var(--ink); font: 600 10px/1 var(--display); letter-spacing: 0; }
-.vr-top nav { display: flex; gap: clamp(18px, 3vw, 40px); }
-.vr-top nav a, .vr-social a { text-transform: uppercase; }
-.vr-top nav a { position: relative; color: var(--mute); text-decoration: none; padding: 6px 0; transition: color 0.3s; }
-.vr-top nav a::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: var(--ink); transform: scaleX(0); transform-origin: left; transition: transform 0.45s var(--ease); }
-.vr-top nav a:hover { color: var(--ink); }
-.vr-top nav a:hover::after { transform: scaleX(1); }
 
 /* ---------- portrait ---------- */
 .vr-stage { position: absolute; inset: 0; pointer-events: none; }
@@ -254,12 +238,12 @@ const CSS = `@import url("https://fonts.googleapis.com/css2?family=Instrument+Se
   will-change: transform;
 }
 .vr-btn--primary { background: var(--ink); color: #f4f4f4; }
-.vr-btn--primary:hover { background: var(--accent); border-color: var(--accent); }
+.vr-btn--primary:hover { background: #00ff41; border-color: #00ff41; color: var(--ink); box-shadow: 0 0 24px rgba(0, 255, 65, 0.35); }
 .vr-btn--primary span { transition: transform 0.35s var(--ease); }
 .vr-btn--primary:hover span { transform: translateX(4px); }
 .vr-btn--ghost { background: transparent; color: var(--ink); }
 .vr-btn--ghost:hover { background: var(--ink); color: #f4f4f4; }
-.vr-btn:focus-visible, .vr-scroll:focus-visible, .vr-top a:focus-visible, .vr-social a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.vr-btn:focus-visible, .vr-scroll:focus-visible, .vr-social a:focus-visible { outline: 2px solid #008a23; outline-offset: 3px; }
 
 /* ---------- quick facts ---------- */
 .vr-facts {
@@ -283,7 +267,7 @@ const CSS = `@import url("https://fonts.googleapis.com/css2?family=Instrument+Se
 .vr-pulse::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--ok); animation: vr-ping 2.2s ease-out infinite; }
 @keyframes vr-ping { 0% { transform: scale(1); opacity: 0.6; } 100% { transform: scale(3.2); opacity: 0; } }
 .vr-social { display: flex; gap: 22px; padding-bottom: 4px; }
-.vr-social a { color: var(--mute); text-decoration: none; transition: color 0.3s; }
+.vr-social a { text-transform: uppercase; color: var(--mute); text-decoration: none; transition: color 0.3s; }
 .vr-social a:hover { color: var(--ink); }
 .vr-scroll {
   position: absolute; left: 50%; bottom: 0; transform: translateX(-50%);
@@ -300,7 +284,7 @@ const CSS = `@import url("https://fonts.googleapis.com/css2?family=Instrument+Se
 .vr-cur__dot { width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--ink); transition: background 0.25s; }
 .vr-cur__ring { width: 38px; height: 38px; margin: -19px 0 0 -19px; }
 .vr-cur__ring i { display: block; width: 100%; height: 100%; border-radius: 50%; border: 1px solid var(--ink); opacity: 0.45; transition: transform 0.35s var(--ease), background 0.3s, border-color 0.3s, opacity 0.3s; }
-.vr-cur__ring.is-hover i { transform: scale(1.55); background: rgba(109, 53, 245, 0.10); border-color: var(--accent); opacity: 0.9; }
+.vr-cur__ring.is-hover i { transform: scale(1.55); background: rgba(0, 217, 54, 0.10); border-color: var(--accent); opacity: 0.9; }
 .vr-cur__ring.is-down i { transform: scale(0.7); }
 .vr-cur__ring.is-hover.is-down i { transform: scale(1.2); }
 .vr-cur__dot.is-hover { background: var(--accent); }
@@ -313,7 +297,6 @@ const CSS = `@import url("https://fonts.googleapis.com/css2?family=Instrument+Se
    background, then the copy on a clean ground (never over the dark jacket). */
 @media (max-width: 820px) {
   .vr-home { height: auto; min-height: 0; display: flex; flex-direction: column; padding-bottom: 28px; }
-  .vr-top { display: none; } /* the site navbar is already above the hero */
   .vr-stage { position: relative; inset: auto; }
   .vr-portrait {
     position: relative; left: auto; bottom: auto; transform: none;
@@ -603,8 +586,8 @@ function LivingPortrait() {
       <img
         className="vr-poster"
         src={POSTER_SRC}
-        width={MOBILE ? 720 : 1920}
-        height={MOBILE ? 720 : 1080}
+        width={1920}
+        height={1080}
         alt={`Portrait of ${PROFILE.name}, turning as you ${PHONE ? "tilt your phone" : "move your cursor"}`}
         fetchpriority="high"
         decoding="async"
@@ -773,9 +756,7 @@ export default function Hero({ onEnterPortfolio, onViewProjects }) {
 
   const goTo = useCallback((id, cb) => {
     if (cb) return cb();
-    const el = document.getElementById(id);
-    if (el) el.scrollIntoView({ behavior: "smooth" });
-    else window.scrollTo({ top: window.innerHeight, behavior: "smooth" });
+    scrollToId(id);
   }, []);
 
   return (
@@ -787,18 +768,6 @@ export default function Hero({ onEnterPortfolio, onViewProjects }) {
         <div className="vr-lit__grid" />
       </div>
       <div className="vr-glow" aria-hidden="true" />
-
-      <header className="vr-top">
-        <div className="vr-mark">
-          <i aria-hidden="true">{PROFILE.name[0]}</i>
-          <span>{PROFILE.name}</span>
-        </div>
-        <nav aria-label="Primary">
-          {PROFILE.nav.map((n) => (
-            <a key={n.label} href={n.href}>{n.label}</a>
-          ))}
-        </nav>
-      </header>
 
       <section className="vr-stage">
         <div className="vr-portrait">

@@ -1,0 +1,99 @@
+/* Import AFTER your existing stylesheet. Uses your accent token if present. */
+:root {
+  --geo-line: var(--accent, #3de0ff);
+  --geo-glow: color-mix(in srgb, var(--geo-line) 28%, transparent);
+}
+
+.about,
+.experience { position: relative; overflow: clip; }
+
+/* ---------- 3D wireframes ---------- */
+.geo {
+  --s: 200px;
+  position: absolute;
+  width: var(--s);
+  height: var(--s);
+  perspective: 900px;
+  pointer-events: none;
+  will-change: transform;
+}
+.geo__spin { position: absolute; inset: 0; transform-style: preserve-3d; will-change: transform; }
+.geo__face,
+.geo__ring {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--geo-line);
+  box-shadow: 0 0 14px var(--geo-glow), inset 0 0 14px var(--geo-glow);
+  opacity: 0.55;
+}
+.geo__ring { border-radius: 50%; }
+.geo__core {
+  position: absolute;
+  inset: 38%;
+  border: 1px solid var(--geo-line);
+  opacity: 0.9;
+  transform: rotate(45deg);
+}
+.geo__face--front  { transform: translateZ(calc(var(--s) / 2)); }
+.geo__face--back   { transform: rotateY(180deg) translateZ(calc(var(--s) / 2)); }
+.geo__face--right  { transform: rotateY(90deg)  translateZ(calc(var(--s) / 2)); }
+.geo__face--left   { transform: rotateY(-90deg) translateZ(calc(var(--s) / 2)); }
+.geo__face--top    { transform: rotateX(90deg)  translateZ(calc(var(--s) / 2)); }
+.geo__face--bottom { transform: rotateX(-90deg) translateZ(calc(var(--s) / 2)); }
+
+/* ---------- About ---------- */
+.geo--about { --s: 180px; top: 14%; right: 7%; z-index: 0; }
+.about__layout { position: relative; z-index: 1; will-change: transform, opacity; }
+.about__portal {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 30vmin;
+  height: 30vmin;
+  margin: -15vmin 0 0 -15vmin;
+  border-radius: 50%;
+  border: 2px solid var(--geo-line);
+  box-shadow: 0 0 40px var(--geo-glow), inset 0 0 40px var(--geo-glow);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+.about__photo { overflow: hidden; }
+
+/* ---------- Experience ---------- */
+.experience__stage { position: sticky; top: 0; height: 0; z-index: 0; pointer-events: none; }
+.experience__sphere { right: 6%; top: 24vh; }
+.timeline-list { position: relative; z-index: 1; }
+.timeline-row__rail { position: relative; }
+.timeline-row__fill {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--geo-line);
+  box-shadow: 0 0 10px var(--geo-line);
+  transform-origin: top center;
+}
+.timeline-row__dot { position: relative; z-index: 1; transition: transform 0.4s, box-shadow 0.4s; }
+.timeline-row.is-active .timeline-row__dot { transform: scale(1.5); box-shadow: 0 0 16px var(--geo-line); }
+.timeline-row { transition: opacity 0.4s; }
+.timeline-list:has(.is-active) .timeline-row:not(.is-active) { opacity: 0.55; }
+
+/* ---------- Smaller screens: lighter geometry ---------- */
+@media (max-width: 1023px) {
+  .geo--about { --s: 120px; top: 4%; right: 4%; opacity: 0.7; }
+  .experience__sphere { right: -40px; opacity: 0.35; }
+}
+@media (max-width: 639px) {
+  .experience__sphere { display: none; }
+}
+
+/* ---------- Reduced motion: static pose, no portal, nothing hidden ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .geo--cube .geo__spin { transform: rotateX(-24deg) rotateY(32deg); }
+  .geo--sphere .geo__spin { transform: rotateX(-18deg) rotateY(24deg); }
+  .about__portal { display: none; }
+  .timeline-row__fill { transform: none; opacity: 0.6; }
+}

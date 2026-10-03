@@ -1,14 +1,17 @@
-import { timelineYears } from "../data/content";
+import { experienceTrack } from "../data/content";
 
 export default function Timeline({ compact = false }) {
   return (
     <div className={`timeline ${compact ? "timeline--compact" : ""}`}>
       <div className="timeline__bar">
-        {timelineYears.map((year) => (
-          <div className={`timeline__point ${year === "2026" ? "is-active" : ""}`} key={year}>
+        {experienceTrack.map((entry, index) => (
+          <div
+            className={`timeline__point ${index === experienceTrack.length - 1 ? "is-active" : ""}`}
+            key={`${entry.year}-${entry.title}`}
+          >
             <span className="timeline__dot" />
-            <span>{year}</span>
-            {year === "2026" && !compact && <small>CURRENT TIMELINE</small>}
+            <span>{entry.year}</span>
+            {index === experienceTrack.length - 1 && !compact && <small>CURRENT TIMELINE</small>}
           </div>
         ))}
       </div>
