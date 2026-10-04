@@ -1,10 +1,10 @@
-/* Import AFTER your existing stylesheet. Uses your accent token if present. */
-:root {
-  --geo-line: var(--neon-ink, var(--accent, #3de0ff));
-  --geo-glow: color-mix(in srgb, var(--neon, var(--geo-line)) 45%, transparent);
+/* 3D wireframes + the Experience timeline rail. Colours come from the scene tokens. */
+.experience,
+.geo {
+  --geo-line: var(--accent-text);
+  --geo-glow: color-mix(in srgb, var(--neon) 40%, transparent);
 }
 
-.about,
 .experience { position: relative; overflow: clip; }
 
 /* ---------- 3D wireframes ---------- */
@@ -24,7 +24,7 @@
   inset: 0;
   border: 1px solid var(--geo-line);
   box-shadow: 0 0 14px var(--geo-glow), inset 0 0 14px var(--geo-glow);
-  opacity: 0.55;
+  opacity: 0.45;
 }
 .geo__ring { border-radius: 50%; }
 .geo__core {
@@ -41,42 +41,51 @@
 .geo__face--top    { transform: rotateX(90deg)  translateZ(calc(var(--s) / 2)); }
 .geo__face--bottom { transform: rotateX(-90deg) translateZ(calc(var(--s) / 2)); }
 
-/* ---------- About ---------- */
-.geo--about { --s: 180px; top: 14%; right: 7%; z-index: 0; }
-.about__layout { position: relative; z-index: 1; will-change: transform, opacity; }
-.about__photo { overflow: hidden; }
-
 /* ---------- Experience ---------- */
 .experience__stage { position: sticky; top: 0; height: 0; z-index: 0; pointer-events: none; }
-.experience__sphere { right: 6%; top: 24vh; }
-.timeline-list { position: relative; z-index: 1; }
-.timeline-row__rail { position: relative; }
+.experience__sphere { right: 4%; top: 22vh; }
+.experience .sh, .timeline-list { position: relative; z-index: 1; }
+
+.timeline-row__rail { position: relative; display: flex; justify-content: center; }
+.timeline-row__rail::before { content: ""; position: absolute; left: 50%; top: 0; bottom: calc(var(--row-pad) * -2 - 1px); width: 1px; background: var(--line); }
+.timeline-row:last-child .timeline-row__rail::before { bottom: 0; }
 .timeline-row__fill {
   position: absolute;
   left: 50%;
   top: 0;
-  bottom: 0;
+  bottom: calc(var(--row-pad) * -2 - 1px);
   width: 2px;
   margin-left: -1px;
-  background: var(--neon, var(--geo-line));
+  background: var(--neon);
   box-shadow: 0 0 10px var(--geo-glow);
   transform-origin: top center;
 }
-.timeline-row__dot { position: relative; z-index: 1; transition: transform 0.4s, box-shadow 0.4s; }
-.timeline-row.is-active .timeline-row__dot { transform: scale(1.5); box-shadow: 0 0 16px var(--geo-glow); }
+.timeline-row:last-child .timeline-row__fill { bottom: 0; }
+.timeline-row__dot {
+  position: relative;
+  z-index: 1;
+  width: 11px;
+  height: 11px;
+  margin-top: 8px;
+  border: 1px solid var(--faint);
+  border-radius: 50%;
+  background: var(--scene-bg);
+  transition: transform 0.4s, box-shadow 0.4s, background 0.4s, border-color 0.4s;
+}
+.timeline-row.is-current .timeline-row__dot { background: var(--neon); border-color: var(--neon); box-shadow: 0 0 12px var(--neon); }
+.timeline-row.is-active .timeline-row__dot { transform: scale(1.45); border-color: var(--neon); box-shadow: 0 0 16px var(--geo-glow); }
 .timeline-row { transition: opacity 0.4s; }
-.timeline-list:has(.is-active) .timeline-row:not(.is-active) { opacity: 0.55; }
+.timeline-list:has(.is-active) .timeline-row:not(.is-active):not(:hover) { opacity: 0.5; }
 
 /* ---------- Smaller screens: lighter geometry ---------- */
 @media (max-width: 1023px) {
-  .geo--about { --s: 120px; top: 4%; right: 4%; opacity: 0.7; }
   .experience__sphere { right: -40px; opacity: 0.35; }
 }
 @media (max-width: 639px) {
   .experience__sphere { display: none; }
 }
 
-/* ---------- Reduced motion: static pose, no portal, nothing hidden ---------- */
+/* ---------- Reduced motion: static pose, nothing hidden ---------- */
 @media (prefers-reduced-motion: reduce) {
   .geo--cube .geo__spin { transform: rotateX(-24deg) rotateY(32deg); }
   .geo--sphere .geo__spin { transform: rotateX(-18deg) rotateY(24deg); }

@@ -12,12 +12,12 @@ import Scene from "../components/Scene";
 import { SolidBox, SolidPyramid, SolidSphere } from "../components/Solids";
 import useSceneTransitions from "../hooks/useSceneTransitions";
 
-// Scenes hand off one to the next; tones alternate white / grey.
+// Scenes hand off one to the next. Tones: light / grey, with dark scenes for rhythm.
 const SCENES = [
   { key: "hero", tone: "hero", content: <Hero /> },
   {
     key: "about",
-    tone: "grey",
+    tone: "light",
     content: <About />,
     shapes: (
       <>
@@ -28,7 +28,7 @@ const SCENES = [
   },
   {
     key: "work",
-    tone: "white",
+    tone: "grey",
     content: <Projects />,
     shapes: (
       <>
@@ -39,18 +39,18 @@ const SCENES = [
   },
   {
     key: "skills",
-    tone: "grey",
+    tone: "dark",
     content: <Skills />,
     shapes: (
       <>
-        <SolidSphere size={120} depth={0.25} style={{ left: "4%", top: "16%" }} />
-        <SolidBox size={84} tone="neon" depth={0.4} hideSm style={{ right: "6%", top: "68%" }} />
+        <SolidSphere size={110} depth={0.25} hideSm style={{ right: "6%", top: "12%" }} />
+        <SolidBox size={84} tone="neon" depth={0.4} hideSm style={{ left: "3%", top: "70%" }} />
       </>
     ),
   },
   {
     key: "experience",
-    tone: "white",
+    tone: "light",
     content: <Experience />,
     shapes: <SolidPyramid size={110} tone="ink" depth={0.3} style={{ left: "4%", top: "62%" }} />,
   },
@@ -60,14 +60,14 @@ const SCENES = [
     content: <Icubeverse />,
     shapes: (
       <>
-        <SolidBox size={110} tone="neon" depth={0.3} style={{ right: "9%", top: "20%" }} />
+        <SolidBox size={110} tone="neon" depth={0.3} hideSm style={{ right: "9%", top: "20%" }} />
         <SolidPyramid size={80} depth={0.2} hideSm style={{ left: "7%", top: "70%" }} />
       </>
     ),
   },
   {
     key: "contact",
-    tone: "white",
+    tone: "dark",
     content: (
       <>
         <Contact />
@@ -76,8 +76,8 @@ const SCENES = [
     ),
     shapes: (
       <>
-        <SolidSphere size={190} depth={0.2} style={{ right: "7%", top: "26%" }} />
-        <SolidBox size={64} tone="neon" depth={0.45} hideSm style={{ right: "30%", top: "12%" }} />
+        <SolidSphere size={130} depth={0.2} hideSm style={{ right: "3%", top: "30%" }} />
+        <SolidBox size={64} tone="neon" depth={0.45} hideSm style={{ right: "6%", top: "12%" }} />
       </>
     ),
   },

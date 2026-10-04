@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { experienceTrack } from "../data/content";
 import { WireSphere } from "./Geo";
+import SectionHead from "./SectionHead";
 import useScrollStory from "../hooks/useScrollStory";
 import { gsap, ScrollTrigger } from "../lib/gsap";
 
@@ -72,14 +73,12 @@ export default function Experience() {
         <WireSphere className="experience__sphere" size={280} />
       </div>
 
-      <div className="section-head">
-        <p className="section-label">Experience</p>
-        <h2>Career</h2>
-      </div>
+      <SectionHead index="04" label="Experience" title="The road" accent="so far." />
 
       <div className="timeline-list">
         {experienceTrack.map((entry, i) => (
-          <div className={`timeline-row ${i === current ? "is-current" : ""}`} key={entry.year}>
+          <div className={`timeline-row ${i === current ? "is-current" : ""}`} key={entry.year} data-cursor>
+            <span className="timeline-row__idx" aria-hidden="true">{String(i + 1).padStart(2, "0")}</span>
             <time>{entry.year}</time>
             <div className="timeline-row__rail">
               <span className="timeline-row__fill" />

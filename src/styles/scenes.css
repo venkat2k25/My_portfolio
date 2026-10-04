@@ -1,13 +1,19 @@
 /* ================================================================
    Scenes — full-screen layers; each hands off to the next.
    ================================================================ */
+/* The wrapper never catches the pointer (during a hand-off the incoming one
+   overlaps the outgoing scene); only its frame does, once it is visible. */
+.scene,
+.scenes > .pin-spacer { pointer-events: none; }
 .scene { position: relative; z-index: var(--z, 1); }
 .scene__frame {
   position: relative;
+  pointer-events: auto;
   overflow: clip; /* clip, not hidden: keeps position: sticky working inside */
-  background: var(--scene-bg, var(--bg));
+  background: var(--scene-bg);
+  color: var(--ink);
 }
-.scene__inner { position: relative; } /* no will-change: it would trap Hero's fixed cursor */
+.scene__inner { position: relative; z-index: 1; } /* above the grid field */
 .scene__body {
   position: relative;
   z-index: 1;
@@ -17,14 +23,22 @@
   justify-content: center;
 }
 
-/* Tones alternate white / grey. Grey scenes lift their cards to
-   white by re-pointing the surface tokens. */
-.scene--white { --scene-bg: var(--bg); }
-.scene--grey {
-  --scene-bg: #eef0f2;
-  --surface: #ffffff;
-  --surface-2: #f8f9fa;
-  --border: #dcdfe3;
+/* Tones re-point the design tokens (index.css), so every component reads
+   correctly on any of them. */
+.scene--light { --scene-bg: #f4f4f2; }
+.scene--grey { --scene-bg: #e8e8e6; --card: rgba(255, 255, 255, 0.66); }
+.scene--dark {
+  --scene-bg: #0c0d0f;
+  --ink: #eeeeec;
+  --mute: rgba(238, 238, 236, 0.62);
+  --faint: rgba(238, 238, 236, 0.4);
+  --line: rgba(238, 238, 236, 0.12);
+  --card: rgba(255, 255, 255, 0.03);
+  --accent: var(--neon);
+  --accent-text: var(--neon);
+  --lit: rgba(0, 255, 65, 0.22);
+  --glow-c: rgba(0, 255, 65, 0.06);
+  color-scheme: dark;
 }
 .scene--hero { --scene-bg: #f1f1f1; }
 

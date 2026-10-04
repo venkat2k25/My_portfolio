@@ -73,7 +73,12 @@ function enter(scene, frame, inner, solids) {
       end: "top top",
       scrub: true, // must track scroll exactly: the shift below cancels it
       invalidateOnRefresh: true,
-      onLeave: () => gsap.set([frame, inner], { clearProps: "transform,opacity" }),
+      // still mostly invisible: don't let it catch the pointer
+      onUpdate: (self) => (frame.style.pointerEvents = self.progress < 0.5 ? "none" : ""),
+      onLeave: () => {
+        gsap.set([frame, inner], { clearProps: "transform,opacity" });
+        frame.style.pointerEvents = "";
+      },
     },
   });
 
@@ -106,8 +111,13 @@ function exit(scene, inner, solids) {
       pinSpacing: false,
       scrub: true,
       invalidateOnRefresh: true,
-      // Back at rest: drop the transform so fixed-position children (Hero's cursor) behave.
-      onLeaveBack: () => gsap.set([inner, ...solids], { clearProps: "transform,opacity" }),
+      // faded out: stop catching the pointer
+      onUpdate: (self) => (inner.style.pointerEvents = self.progress > 0.35 ? "none" : ""),
+      // Back at rest: drop the transform so fixed-position children behave.
+      onLeaveBack: () => {
+        gsap.set([inner, ...solids], { clearProps: "transform,opacity" });
+        inner.style.pointerEvents = "";
+      },
     },
   });
 

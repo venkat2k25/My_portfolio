@@ -1,10 +1,12 @@
 import portrait from "../assets/Neon Blue and Magenta Portrait.png";
 
 export const navLinks = [
-  { href: "#work", label: "Work" },
+  // same order (and numbering) as the sections on the page
   { href: "#about", label: "About" },
+  { href: "#work", label: "Work" },
   { href: "#skills", label: "Skills" },
   { href: "#experience", label: "Experience" },
+  { href: "#icubeverse", label: "Studio" },
   { href: "#contact", label: "Contact" },
 ];
 
@@ -118,6 +120,13 @@ export const skillGroups = [
     code: "SYS.06",
     items: ["Azure", "Firebase", "Docker", "Git", "REST APIs", "Postman", "Selenium", "Linux"],
   },
+];
+
+// Counters in the About section (they count up as they scroll into view).
+export const stats = [
+  { value: projects.length, label: "Selected projects" },
+  { value: skillGroups.reduce((n, g) => n + g.items.length, 0), suffix: "+", label: "Tools & skills" },
+  { value: 8.24, decimals: 2, label: "MCA CGPA, VIT" },
 ];
 
 export const quickFacts = [

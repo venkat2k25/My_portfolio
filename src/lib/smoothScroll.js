@@ -31,7 +31,7 @@ export function stopSmoothScroll() {
 }
 
 // Document offset from the layout chain (offsetTop ignores transforms).
-function layoutTop(el) {
+export function layoutTop(el) {
   const scene = el.closest(".scene");
   // A pinned scene is position:fixed; its pin-spacer still holds its place.
   let node = scene ? (scene.parentElement.classList.contains("pin-spacer") ? scene.parentElement : scene) : el;

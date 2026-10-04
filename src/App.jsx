@@ -2,9 +2,9 @@ import { useEffect } from "react";
 import Home from "./pages/Home";
 import { handleAnchorClicks, startSmoothScroll, stopSmoothScroll } from "./lib/smoothScroll";
 import GuideCharacter from "./components/GuideCharacter";
+import SiteFX from "./components/fx/SiteFX";
 import "./styles/scroll-story.css";
 import "./styles/scenes.css";
-
 
 function App() {
   useEffect(() => {
@@ -20,6 +20,7 @@ function App() {
     <>
       <Home />
       <GuideCharacter />
+      <SiteFX />
     </>
   );
 }

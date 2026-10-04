@@ -119,9 +119,8 @@ function FloatingShapes() {
 /* ------------------------------------------------------------------ */
 /*  Styles (inline so this stays one self-contained file)              */
 /* ------------------------------------------------------------------ */
-const CSS = `@import url("https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;600&display=swap");
-
-/* The footage is shot on a light studio backdrop, so the hero stays light. */
+// Fonts are loaded once, site-wide, in index.css.
+const CSS = `/* The footage is shot on a light studio backdrop, so the hero stays light. */
 .vr-home {
   --bg: #f1f1f1;
   --ink: #111214;
@@ -148,7 +147,6 @@ const CSS = `@import url("https://fonts.googleapis.com/css2?family=Instrument+Se
   -webkit-font-smoothing: antialiased;
 }
 .vr-home *, .vr-home *::before, .vr-home *::after { box-sizing: border-box; }
-.vr-home.has-cursor, .vr-home.has-cursor a, .vr-home.has-cursor button { cursor: none; }
 
 /* ---------- background ---------- */
 .vr-grid {
@@ -278,17 +276,6 @@ const CSS = `@import url("https://fonts.googleapis.com/css2?family=Instrument+Se
 .vr-scroll i { width: 1px; height: 30px; background: linear-gradient(var(--ink), transparent); transform-origin: top; animation: vr-decode 2.2s cubic-bezier(0.6, 0, 0.2, 1) infinite; }
 @keyframes vr-decode { 0% { transform: scaleY(0); opacity: 1; } 60% { transform: scaleY(1); opacity: 1; } 100% { transform: scaleY(1); opacity: 0; } }
 
-/* ---------- custom cursor ---------- */
-.vr-cur { position: fixed; left: 0; top: 0; z-index: 100; pointer-events: none; opacity: 0; transition: opacity 0.3s; }
-.has-cursor.cur-on .vr-cur { opacity: 1; }
-.vr-cur__dot { width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--ink); transition: background 0.25s; }
-.vr-cur__ring { width: 38px; height: 38px; margin: -19px 0 0 -19px; }
-.vr-cur__ring i { display: block; width: 100%; height: 100%; border-radius: 50%; border: 1px solid var(--ink); opacity: 0.45; transition: transform 0.35s var(--ease), background 0.3s, border-color 0.3s, opacity 0.3s; }
-.vr-cur__ring.is-hover i { transform: scale(1.55); background: rgba(0, 217, 54, 0.10); border-color: var(--accent); opacity: 0.9; }
-.vr-cur__ring.is-down i { transform: scale(0.7); }
-.vr-cur__ring.is-hover.is-down i { transform: scale(1.2); }
-.vr-cur__dot.is-hover { background: var(--accent); }
-
 /* ---------- responsive ---------- */
 @media (max-width: 1100px) {
   .vr-facts { width: 260px; }
@@ -364,7 +351,7 @@ function smoothDamp(cur, target, vel, smoothTime, maxSpeed, dt) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Living portrait – frames drawn on a canvas, cross-faded, spring-    */
+/*  Living portrait – frames drawn on a canvas one at a time, spring-   */
 /*  driven by the cursor. Frames stream in centre-out and are decoded   */
 /*  once (downscaled), so moving never waits on a decode.               */
 /* ------------------------------------------------------------------ */
@@ -410,23 +397,15 @@ function LivingPortrait() {
       return -1;
     };
 
+    // Always paint one whole frame – blending neighbours shows a ghosted double image
+    // when the head moves between them.
+    let shown = -1; // frame index currently on the canvas
     const draw = (p) => {
-      p = clamp(p, 0, TOTAL_FRAMES - 1);
-      const a = Math.floor(p);
-      const b = Math.min(a + 1, TOTAL_FRAMES - 1);
-      const f = p - a;
-      const ia = bitmaps[a] ? a : nearest(a);
-      if (ia < 0) return;
-      ctx.globalAlpha = 1;
+      const i = Math.round(clamp(p, 0, TOTAL_FRAMES - 1));
+      const ia = bitmaps[i] ? i : nearest(i);
+      if (ia < 0 || ia === shown) return;
       ctx.drawImage(bitmaps[ia], 0, 0, canvas.width, canvas.height);
-      if (f > 0.02) {
-        const ib = bitmaps[b] ? b : nearest(b);
-        if (ib >= 0 && ib !== ia) {
-          ctx.globalAlpha = f; // cross-fade between neighbouring frames
-          ctx.drawImage(bitmaps[ib], 0, 0, canvas.width, canvas.height);
-          ctx.globalAlpha = 1;
-        }
-      }
+      shown = ia;
     };
 
     // ---- input
@@ -598,20 +577,15 @@ function LivingPortrait() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Cursor effect: dot + trailing ring, grid + glow that follow it      */
+/*  Cursor effect: grid + glow that follow it, shapes drift away.       */
+/*  (The cursor itself is site-wide: components/fx/SiteFX.)             */
 /* ------------------------------------------------------------------ */
 function CursorFX({ rootRef }) {
-  const dotRef = useRef(null);
-  const ringRef = useRef(null);
-
   useEffect(() => {
     const root = rootRef.current;
     const fine = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
     if (!root || !fine) return;
 
-    root.classList.add("has-cursor");
-    const dot = dotRef.current;
-    const ring = ringRef.current;
     const reduced = prefersReducedMotion();
     const lit = root.querySelector(".vr-lit");
     const litGrid = root.querySelector(".vr-lit__grid");
@@ -619,10 +593,8 @@ function CursorFX({ rootRef }) {
     const shapes = [...root.querySelectorAll(".vr-shape")].map((el) => ({ el, depth: +el.dataset.depth }));
 
     let mx = window.innerWidth / 2, my = window.innerHeight / 2; // pointer
-    let rx = mx, ry = my; // ring (trails the pointer)
-    let sx = mx, sy = my; // spotlight (trails even more)
-    let hover = false, down = false, raf = 0;
-    let shownHover = null, shownDown = null;
+    let sx = mx, sy = my; // spotlight (trails the pointer)
+    let raf = 0;
 
     // cache the hero's box instead of measuring it every frame
     let box = root.getBoundingClientRect();
@@ -637,20 +609,12 @@ function CursorFX({ rootRef }) {
       mx = e.clientX;
       my = e.clientY;
       root.classList.add("cur-on");
-      const t = e.target;
-      hover = !!(t && t.closest && t.closest("a, button, [data-cursor]"));
     };
-    const onDown = () => (down = true);
-    const onUp = () => (down = false);
     const onLeave = () => root.classList.remove("cur-on");
 
     const loop = () => {
-      rx += (mx - rx) * (reduced ? 1 : 0.18);
-      ry += (my - ry) * (reduced ? 1 : 0.18);
       sx += (mx - sx) * (reduced ? 1 : 0.07);
       sy += (my - sy) * (reduced ? 1 : 0.07);
-      dot.style.transform = `translate3d(${mx}px, ${my}px, 0)`;
-      ring.style.transform = `translate3d(${rx}px, ${ry}px, 0)`;
       // spotlight + lit grid: transform-only, handled by the compositor
       const lx = sx - box.left - 230, ly = sy - box.top - 230;
       lit.style.transform = `translate3d(${lx}px, ${ly}px, 0)`;
@@ -661,19 +625,10 @@ function CursorFX({ rootRef }) {
         const px = sx / window.innerWidth - 0.5, py = sy / window.innerHeight - 0.5;
         for (const s of shapes) s.el.style.transform = `translate3d(${-px * s.depth}px, ${-py * s.depth}px, 0)`;
       }
-      if (hover !== shownHover || down !== shownDown) {
-        ring.firstChild.classList.toggle("is-hover", hover);
-        ring.firstChild.classList.toggle("is-down", down);
-        dot.firstChild.classList.toggle("is-hover", hover);
-        shownHover = hover;
-        shownDown = down;
-      }
       raf = requestAnimationFrame(loop);
     };
 
     window.addEventListener("pointermove", onMove, { passive: true });
-    window.addEventListener("pointerdown", onDown);
-    window.addEventListener("pointerup", onUp);
     document.documentElement.addEventListener("mouseleave", onLeave);
     window.addEventListener("resize", measure);
     window.addEventListener("scroll", measure, { passive: true });
@@ -684,23 +639,12 @@ function CursorFX({ rootRef }) {
       window.removeEventListener("resize", measure);
       window.removeEventListener("scroll", measure);
       window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerdown", onDown);
-      window.removeEventListener("pointerup", onUp);
       document.documentElement.removeEventListener("mouseleave", onLeave);
-      root.classList.remove("has-cursor", "cur-on");
+      root.classList.remove("cur-on");
     };
   }, [rootRef]);
 
-  return (
-    <>
-      <div className="vr-cur" ref={ringRef} aria-hidden="true">
-        <div className="vr-cur__ring"><i /></div>
-      </div>
-      <div className="vr-cur" ref={dotRef} aria-hidden="true">
-        <div className="vr-cur__dot" />
-      </div>
-    </>
-  );
+  return null;
 }
 
 /* Buttons gently lean toward the cursor */
