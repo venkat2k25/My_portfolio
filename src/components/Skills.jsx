@@ -108,6 +108,14 @@ function SkillConsole() {
     return () => ctx.revert();
   }, [active, group]);
 
+  // phones: the groups are a sideways-scrolling row; keep the chosen one in view
+  useEffect(() => {
+    const tab = tabs.current[active];
+    const row = tab?.parentElement;
+    if (!row || row.scrollWidth <= row.clientWidth) return;
+    row.scrollTo({ left: tab.offsetLeft - 20, behavior: reducedMotion() ? "auto" : "smooth" });
+  }, [active]);
+
   const onKeyDown = (e) => {
     const n = skillGroups.length;
     const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];

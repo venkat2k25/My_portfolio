@@ -45,6 +45,7 @@ body { margin: 0; background: var(--scene-bg); overflow-x: hidden; }
 img { max-width: 100%; display: block; }
 a { color: inherit; text-decoration: none; }
 button { font-family: inherit; color: inherit; }
+a, button { -webkit-tap-highlight-color: transparent; }
 ::selection { background: var(--neon); color: #111214; }
 
 :focus-visible {
@@ -537,7 +538,7 @@ a:hover .roll__in, button:hover .roll__in { transform: translateY(-50%); }
    Skills — marquees + console (dark scene)
 ------------------------------------------------------------------ */
 .skills { position: relative; }
-.skills__head { padding-bottom: 0; }
+.section.skills__head { padding-bottom: 0; }
 .skills__head .sh { margin-bottom: clamp(28px, 4vw, 48px); }
 .skills__marquees { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .mq { overflow: hidden; padding: 16px 0; }
@@ -557,9 +558,9 @@ a:hover .roll__in, button:hover .roll__in { transform: translateY(-50%); }
 .mq__item:hover { color: var(--neon); }
 .mq__sep { font-style: normal; font-size: 0.32em; color: var(--neon); }
 
-.skills__console { padding-top: clamp(48px, 7vw, 96px); }
+.section.skills__console { padding-top: clamp(40px, 7vw, 96px); }
 .console { display: grid; grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr); gap: clamp(20px, 3.5vw, 48px); align-items: stretch; }
-.console__tabs { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+.console__tabs { position: relative; display: flex; flex-direction: column; border-top: 1px solid var(--line); }
 .console__tab {
   position: relative;
   display: grid;
@@ -842,9 +843,13 @@ a:hover .roll__in, button:hover .roll__in { transform: translateY(-50%); }
 }
 
 @media (max-width: 719px) {
-  .section { padding: 96px var(--pad) 72px; }
-  .sh--row { flex-direction: column; align-items: flex-start; gap: 18px; }
-  .sh__meta { margin-bottom: 16px; }
+  :root { --pad: 20px; }
+  .section { padding: 84px var(--pad) 56px; }
+  .sh { margin-bottom: 32px; }
+  .sh--row { flex-direction: column; align-items: flex-start; gap: 16px; }
+  .sh__meta { margin-bottom: 14px; }
+  .sh__title { font-size: clamp(40px, 11.5vw, 56px); }
+  .btn { justify-content: center; }
 
   .topbar { padding: 8px var(--pad); }
   .nav-toggle { display: block; }
@@ -862,32 +867,82 @@ a:hover .roll__in, button:hover .roll__in { transform: translateY(-50%); }
     -webkit-backdrop-filter: blur(14px);
     backdrop-filter: blur(14px);
   }
-  .topbar.is-open { --bar-bg: rgba(241, 241, 241, 0.97); }
-  .topbar.is-open.is-dark { --bar-bg: rgba(12, 13, 15, 0.97); }
+  /* solid menu: page content must not show through it */
+  .topbar.is-open { --bar-bg: #f1f1f1; }
+  .topbar.is-open.is-dark { --bar-bg: #0c0d0f; }
+  .topbar nav { background: #f1f1f1; }
+  .topbar.is-dark nav { background: #0c0d0f; }
   .topbar.is-open nav { display: flex; }
   .topbar nav a { padding: 16px 0; font-size: 13px; color: var(--ink); border-bottom: 1px solid var(--line); }
   .topbar nav a:last-child { border-bottom: 0; }
 
-  .about__layout { grid-template-columns: minmax(0, 1fr); }
-  .lens { max-width: 340px; }
-  .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .about__layout { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .lens { aspect-ratio: 1 / 1; }
+  .lens img { object-position: 50% 22%; }
+  .about__statement { font-size: 21px; }
+  .about__body { font-size: 14.5px; margin-bottom: 28px; }
+  .stats { margin-bottom: 28px; }
   .stat { padding: 16px 10px 14px; }
+  .stat b { font-size: 36px; }
   .stat > span { font-size: 9px; letter-spacing: 0.1em; }
+  .about__copy .btn { width: 100%; }
 
   .bento { grid-template-columns: minmax(0, 1fr); }
   .pcard { min-height: 0; padding: 20px; }
   .pcard--featured { min-height: 0; }
   .pcard__body { padding-top: 36px; }
 
-  .console__tab { grid-template-columns: 52px minmax(0, 1fr) auto; padding: 15px 2px; gap: 10px; }
-  .console__tab[aria-selected="true"] { padding-left: 14px; }
+  /* groups become a swipeable row of pills right above the panel */
+  .console { gap: 14px; }
+  .console__tabs {
+    flex-direction: row;
+    gap: 8px;
+    margin: 0 calc(var(--pad) * -1);
+    padding: 2px var(--pad) 6px;
+    border-top: 0;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+  .console__tabs::-webkit-scrollbar { display: none; }
+  .console__tab {
+    flex: none;
+    display: inline-flex;
+    gap: 8px;
+    padding: 11px 14px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    scroll-snap-align: start;
+  }
+  .console__tab::before { display: none; }
+  .console__tab[aria-selected="true"] { padding-left: 14px; border-color: var(--neon); background: rgba(0, 255, 65, 0.08); }
+  .console__tab-code { display: none; }
+  .console__tab-name { font-size: 14px; white-space: nowrap; }
+  .console__tab-count { font-size: 10px; }
+  .console__panel { padding: 20px; }
+  .console__panel-title { margin: 16px 0 18px; font-size: 34px; }
+  .console__chips li { padding: 8px 11px; font-size: 11.5px; }
+  .mq { padding: 10px 0; }
+  .mq__item { gap: 18px; padding-right: 18px; font-size: 34px; }
 
   .timeline-row { grid-template-columns: 18px minmax(0, 1fr); gap: 4px 14px; --row-pad: 22px; }
+  .timeline-row h3 { font-size: 22px; }
+  .timeline-row:hover h3, .timeline-row.is-active h3 { transform: none; } /* keep titles aligned with their year */
+  .timeline-row::before { display: none; }
   .timeline-row__idx { display: none; }
   .timeline-row time { grid-column: 2; padding-top: 0; }
   .timeline-row__rail { grid-row: 1 / span 2; grid-column: 1; }
   .timeline-row__body { grid-column: 2; }
 
+  .icube__word { margin-bottom: 24px; }
+  .icube__row { gap: 22px; padding-top: 22px; }
+  .icube__pills li { padding: 10px 12px; font-size: 10px; }
+  .icube__row .btn { justify-self: stretch; }
+
+  .contact__big { font-size: clamp(64px, 19vw, 96px); }
+  .contact__mail { margin-bottom: 48px; font-size: clamp(19px, 5.6vw, 24px); }
+  .contact__grid { gap: 28px; }
+  .contact__lead { font-size: 16px; }
   .contact__row { grid-template-columns: minmax(0, 1fr) auto; }
   .contact__row dt { grid-column: 1 / -1; }
   .contact__mail { gap: 10px; }

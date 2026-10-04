@@ -283,7 +283,8 @@ const CSS = `/* The footage is shot on a light studio backdrop, so the hero stay
 /* Mobile: everything stacks in normal flow – square portrait that fades into the
    background, then the copy on a clean ground (never over the dark jacket). */
 @media (max-width: 820px) {
-  .vr-home { height: auto; min-height: 0; display: flex; flex-direction: column; padding-bottom: 28px; }
+  /* top padding clears the fixed navbar */
+  .vr-home { height: auto; min-height: 0; display: flex; flex-direction: column; padding: 60px 0 28px; }
   .vr-stage { position: relative; inset: auto; }
   .vr-portrait {
     position: relative; left: auto; bottom: auto; transform: none;
@@ -292,20 +293,21 @@ const CSS = `/* The footage is shot on a light studio backdrop, so the hero stay
     mask-image: linear-gradient(90deg, transparent 0, #000 10%, #000 90%, transparent 100%), linear-gradient(180deg, #000 62%, transparent 98%);
   }
   .vr-copy { position: relative; left: auto; right: auto; bottom: auto; max-width: none; margin-top: -36px; padding: 0 var(--pad); }
-  .vr-role { margin-bottom: 16px; font-size: 10px; }
+  .vr-role { margin-bottom: 16px; gap: 10px; font-size: 9.5px; letter-spacing: 0.14em; white-space: nowrap; }
+  .vr-role::before { width: 20px; flex: none; }
   .vr-name { font-size: 18px; margin-bottom: 10px; }
   .vr-subline { font-size: clamp(34px, 10.5vw, 56px); margin-bottom: 18px; }
   .vr-intro { font-size: 13px; line-height: 1.7; margin-bottom: 24px; max-width: none; }
   .vr-actions { gap: 10px; }
   .vr-btn { flex: 1 1 140px; justify-content: center; padding: 16px 14px; }
-  .vr-facts { position: relative; right: auto; bottom: auto; width: auto; margin: 32px var(--pad) 0; }
-  .vr-foot { position: relative; left: auto; right: auto; bottom: auto; margin: 24px var(--pad) 0; flex-wrap: wrap; gap: 14px 24px; align-items: center; }
+  .vr-facts { display: none; } /* the About section shows the same facts right below */
+  .vr-foot { position: relative; left: auto; right: auto; bottom: auto; margin: 28px var(--pad) 0; padding-top: 20px; border-top: 1px solid var(--line); flex-wrap: wrap; gap: 14px 24px; align-items: center; }
   .vr-scroll { display: none; }
   .vr-status, .vr-social { padding-bottom: 0; }
   .vr-foot { justify-content: flex-start; }
   .vr-social { gap: 4px 18px; flex-wrap: wrap; }
   .vr-social a { padding: 8px 0; } /* bigger tap target */
-  .vr-shape:nth-child(n + 5) { display: none; }
+  .vr-shapes { display: none; } /* they would sit on the face */
 }
 @media (prefers-reduced-motion: reduce) {
   .vr-portrait, .vr-copy > *, .vr-facts, .vr-canvas, .vr-shape { transition: none; }

@@ -52,7 +52,7 @@ const SCENES = [
     key: "experience",
     tone: "light",
     content: <Experience />,
-    shapes: <SolidPyramid size={110} tone="ink" depth={0.3} style={{ left: "4%", top: "62%" }} />,
+    shapes: <SolidPyramid size={110} tone="ink" depth={0.3} hideSm style={{ left: "4%", top: "62%" }} />,
   },
   {
     key: "icube",

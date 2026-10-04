@@ -25,7 +25,22 @@ const SUGGESTIONS = ["What does Venkata do?", "Tell me about his experience", "H
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const reduceMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-export default function GuideCharacter({
+// Phones don't get the guide: it covers too much of a small screen.
+const MOBILE = "(max-width: 640px)";
+
+export default function GuideCharacter(props) {
+  const [mobile, setMobile] = useState(() => window.matchMedia(MOBILE).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(MOBILE);
+    const onChange = (e) => setMobile(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  // not rendered at all, so the video never loads on phones
+  return mobile ? null : <Guide {...props} />;
+}
+
+function Guide({
   story = STORY,
   name = "V.A.I.",
   video = "/guide.webm",
